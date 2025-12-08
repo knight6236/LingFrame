@@ -1,0 +1,171 @@
+package com.lingframe.core.plugin;
+
+import com.lingframe.api.context.PluginContext;
+import com.lingframe.api.security.PermissionService;
+import com.lingframe.core.classloader.PluginClassLoader;
+import com.lingframe.core.context.CorePluginContext;
+import com.lingframe.core.security.DefaultPermissionService;
+import com.lingframe.core.spi.ContainerFactory;
+import com.lingframe.core.spi.PluginContainer;
+import lombok.extern.slf4j.Slf4j;
+
+import java.io.File;
+import java.net.URL;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.*;
+
+/**
+ * 插件生命周期管理器
+ * 职责：
+ * 1. 插件的安装与升级 (Install/Upgrade)
+ * 2. 插件的卸载 (Uninstall)
+ * 3. 服务的路由与发现 (Service Discovery)
+ * 4. 资源的全局管控 (Global Shutdown)
+ */
+@Slf4j
+public class PluginManager {
+
+    private final ContainerFactory containerFactory;
+
+    // 插件槽位表：Key=PluginId, Value=Slot
+    private final Map<String, PluginSlot> slots = new ConcurrentHashMap<>();
+
+    // 全局清理调度器 (单线程即可，任务很轻)
+    private final ScheduledExecutorService scheduler;
+
+    // 权限服务
+    private final PermissionService permissionService;
+
+    public PluginManager(ContainerFactory containerFactory) {
+        this.containerFactory = containerFactory;
+        this.permissionService = new DefaultPermissionService(); // 实际应单例注入
+        this.scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "lingframe-plugin-cleaner");
+            t.setDaemon(true); // 设置为守护线程，防止阻碍 JVM 关闭
+            return t;
+        });
+    }
+
+    /**
+     * 安装或升级插件 (核心入口)
+     * 支持热替换：如果插件已存在，则触发蓝绿部署流程
+     *
+     * @param pluginId 插件唯一标识
+     * @param version  插件版本号
+     * @param jarFile  插件 Jar 包文件
+     */
+    public void install(String pluginId, String version, File jarFile) {
+        log.info("Installing plugin: {} v{}", pluginId, version);
+
+        try {
+            // 准备隔离环境 (Child-First ClassLoader)
+            ClassLoader pluginClassLoader = createPluginClassLoader(jarFile);
+
+            // SPI 构建容器 (此时仅创建配置，未启动)
+            PluginContainer container = containerFactory.create(pluginId, jarFile, pluginClassLoader);
+            PluginInstance instance = new PluginInstance(version, container);
+
+            // 获取或创建槽位
+            PluginSlot slot = slots.computeIfAbsent(pluginId, k -> new PluginSlot(k, scheduler, permissionService));
+
+            // 创建上下文
+            PluginContext context = new CorePluginContext(pluginId, this, permissionService);
+
+            // 执行升级 (启动新容器 -> 原子切换流量 -> 旧容器进入死亡队列)
+            slot.upgrade(instance, context);
+
+        } catch (Exception e) {
+            log.error("Failed to install plugin: {} v{}", pluginId, version, e);
+            // 抛出运行时异常，通知上层调用失败
+            throw new RuntimeException("Plugin install failed: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 卸载插件
+     * 逻辑：将当前活跃实例标记为濒死，从管理列表中移除，等待引用计数归零后自然销毁
+     *
+     * @param pluginId 插件ID
+     */
+    public void uninstall(String pluginId) {
+        log.info("Uninstalling plugin: {}", pluginId);
+        PluginSlot slot = slots.remove(pluginId);
+        if (slot == null) {
+            log.warn("Plugin not found: {}", pluginId);
+            return;
+        }
+
+        // 委托槽位执行优雅下线
+        slot.uninstall();
+    }
+
+    /**
+     * 获取插件对外暴露的服务 (动态代理)
+     *
+     * @param callerPluginId    插件ID
+     * @param serviceType 服务接口类型
+     * @return 服务代理对象
+     */
+    public <T> T getService(String callerPluginId, Class<T> serviceType) {
+        return null;
+    }
+
+    // 供 CorePluginContext 回调使用
+    public <T> T getService(String callerPluginId, String targetPluginId, Class<T> serviceType) {
+        PluginSlot slot = slots.get(targetPluginId);
+        if (slot == null) throw new IllegalArgumentException("Target plugin not found");
+        return slot.getService(callerPluginId, serviceType);
+    }
+
+    /**
+     * 获取当前已安装的所有插件ID
+     */
+    public Set<String> getInstalledPlugins() {
+        return slots.keySet();
+    }
+
+    /**
+     * 获取指定插件当前活跃的版本号
+     */
+    public String getPluginVersion(String pluginId) {
+        PluginSlot slot = slots.get(pluginId);
+        return (slot != null) ? slot.getVersion() : null;
+    }
+
+    /**
+     * 全局关闭
+     * 应用退出时调用，强制销毁所有资源
+     */
+    public void shutdown() {
+        log.info("Shutting down PluginManager...");
+
+        // 1. 停止清理任务
+        scheduler.shutdownNow();
+
+        // 2. 并行销毁所有槽位 (加速关闭过程)
+        slots.values().parallelStream().forEach(slot -> {
+            try {
+                slot.uninstall(); // 触发销毁逻辑
+            } catch (Exception e) {
+                log.error("Error shutting down plugin slot", e);
+            }
+        });
+
+        slots.clear();
+        log.info("PluginManager shutdown complete.");
+    }
+
+    /**
+     * 创建插件专用的 Child-First 类加载器
+     */
+    private ClassLoader createPluginClassLoader(File jarFile) {
+        try {
+            URL[] urls = new URL[]{jarFile.toURI().toURL()};
+            // Parent 设置为 PluginManager 的类加载器 (通常是 AppClassLoader)
+            return new PluginClassLoader(urls, this.getClass().getClassLoader());
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to create classloader for " + jarFile.getName(), e);
+        }
+    }
+}
