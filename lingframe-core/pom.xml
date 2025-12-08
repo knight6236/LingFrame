@@ -24,9 +24,19 @@
             <artifactId>snakeyaml</artifactId>
         </dependency>
 
-        <dependency>
+        <!--<dependency>
             <groupId>org.pf4j</groupId>
             <artifactId>pf4j</artifactId>
+        </dependency>-->
+
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
         </dependency>
 
         <!-- 测试 -->
