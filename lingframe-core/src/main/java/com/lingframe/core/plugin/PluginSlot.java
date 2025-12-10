@@ -6,6 +6,7 @@ import com.lingframe.core.proxy.SmartServiceProxy;
 import com.lingframe.core.spi.PluginContainer;
 import lombok.extern.slf4j.Slf4j;
 
+import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -32,6 +33,10 @@ public class PluginSlot {
 
     // 代理缓存：Map<InterfaceClass, ProxyObject>
     private final Map<Class<?>, Object> proxyCache = new ConcurrentHashMap<>();
+
+    // 【新增】FQSID -> InvokableService 缓存 (用于协议服务)
+    // 缓存 FQSID 对应的可执行方法和 Bean 实例
+    private final Map<String, InvokableService> serviceMethodCache = new ConcurrentHashMap<>();
 
     private final PermissionService permissionService;
 
@@ -63,6 +68,11 @@ public class PluginSlot {
         }
         container.start(pluginContext);
 
+        // 【新增】：更新服务方法缓存
+        // 实际场景：这里需要从 container 中获取注册信息填充 serviceMethodCache
+        serviceMethodCache.clear();
+        log.info("[{}] Service method cache cleared and ready for new version.", pluginId);
+
         // 3. 原子切换流量
         activeInstance.set(newInstance);
         log.info("[{}] Traffic switched to version: {}", pluginId, newInstance.getVersion());
@@ -88,6 +98,89 @@ public class PluginSlot {
                         new SmartServiceProxy(callerPluginId, activeInstance, interfaceClass, permissionService)
                 )
         );
+    }
+
+    /**
+     * 【新增】注册真实的可执行服务 (由 PluginManager 调用)
+     */
+    public void registerService(String fqsid, Object bean, Method method) {
+        // method.setAccessible(true); // 如果是 private 方法可能需要
+        serviceMethodCache.put(fqsid, new InvokableService(bean, method));
+    }
+
+    /**
+     * 【新增方法】协议服务调用入口 (由 PluginManager.invokeExtension 调用)
+     * 职责：TCCL劫持 + 查找 Bean + 反射调用 + 引用计数
+     */
+    public Object invokeService(String callerPluginId, String fqsid, Object[] args) throws Exception {
+        PluginInstance instance = activeInstance.get();
+        if (instance == null || !instance.getContainer().isActive()) {
+            throw new IllegalStateException("Service unavailable for FQSID: " + fqsid);
+        }
+
+        instance.enter(); // 引用计数 +1
+        Thread currentThread = Thread.currentThread();
+        ClassLoader originalClassLoader = currentThread.getContextClassLoader();
+
+        try {
+            // 1. TCCL 劫持：确保在正确的类加载器中执行代码
+            currentThread.setContextClassLoader(instance.getContainer().getClassLoader());
+
+            // 2. FQSID 查找实际方法和 Bean
+            // 查找缓存中已注册的可执行服务
+            InvokableService invokable = getInvokableService(fqsid, instance.getContainer());
+
+            if (invokable == null) {
+                throw new NoSuchMethodException("FQSID not found in slot: " + fqsid);
+            }
+
+            // 3. 执行调用
+            return invokable.method().invoke(invokable.bean(), args);
+
+        } catch (Exception e) {
+            log.error("[LingFrame] Protocol service invocation failed. FQSID={}, Caller={}", fqsid, callerPluginId, e);
+            // 统一包装异常，向上抛出
+            throw new RuntimeException("Protocol service invocation error: " + e.getMessage(), e);
+        } finally {
+            // 4. TCCL 恢复与引用计数递减
+            currentThread.setContextClassLoader(originalClassLoader);
+            instance.exit(); // 引用计数 -1
+        }
+    }
+
+    /**
+     * 【内部方法】模拟从 PluginContainer 查找可执行服务
+     */
+    private InvokableService getInvokableService(String fqsid, PluginContainer container) {
+        // 由于真正的类扫描和MethodHandle注册在当前文件外，这里是生产环境的简化占位逻辑。
+        return serviceMethodCache.computeIfAbsent(fqsid, k -> {
+            try {
+                // 模拟根据 FQSID 找到目标 Bean 和 Method
+                // 实际应根据 FQSID 逆向解析出 BeanName 和 MethodSignature
+                log.warn("LingFrame 警告：协议服务查找逻辑正在使用模拟数据，FQSID: {}", fqsid);
+
+                // 假设 FQSID 是 "user-service:query_by_name"，我们找到一个 ExportFacade Bean
+                String beanName = fqsid.split(":")[0] + "ExportFacade";
+                Object bean = container.getBean(beanName);
+
+                if (bean == null) return null;
+
+                // 假设 MethodHandle 已经通过扫描找到并存入
+                // 这里手动查找一个方法作为演示，生产环境应避免 this.getClass()... 查找
+                Method[] methods = bean.getClass().getDeclaredMethods();
+                for (Method m : methods) {
+                    if (m.getName().toLowerCase().contains("query")) { // 找到第一个包含 query 的方法
+                        m.setAccessible(true);
+                        return new InvokableService(bean, m);
+                    }
+                }
+                return null;
+
+            } catch (Exception e) {
+                log.error("Failed to mock find invokable service for FQSID: {}", fqsid, e);
+                return null;
+            }
+        });
     }
 
     /**
@@ -133,5 +226,9 @@ public class PluginSlot {
         }
         // 尝试立即清理一次 (如果正好引用计数为0，直接销毁)
         checkAndKill();
+    }
+
+    // 【新增内部类】用于缓存可执行的服务对象和方法
+        private record InvokableService(Object bean, Method method) {
     }
 }

@@ -1,7 +1,5 @@
 package com.lingframe.api.event;
 
-import com.lingframe.api.extension.ExtensionPoint;
-
 /**
  * 事件监听器接口
  * <p>
@@ -11,7 +9,7 @@ import com.lingframe.api.extension.ExtensionPoint;
  * @param <E> 监听的事件类型
  * @author LingFrame
  */
-public interface LingEventListener<E extends LingEvent> extends ExtensionPoint {
+public interface LingEventListener<E extends LingEvent> {
     
     /**
      * 处理事件

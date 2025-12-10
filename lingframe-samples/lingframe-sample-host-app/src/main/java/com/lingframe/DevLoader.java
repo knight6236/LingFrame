@@ -27,7 +27,6 @@ public class DevLoader implements CommandLineRunner {
         File userPluginDir = new File("lingframe-samples/lingframe-sample-plugin-user/target/classes");
         log.info("DevLoader.run: userPluginDir = {}", userPluginDir.getAbsolutePath());
 
-        log.warn("啊啊啊啊");
         if (userPluginDir.exists()) {
             // 安装开发版插件
             pluginManager.installDev("user-plugin", "dev-snapshot", userPluginDir);

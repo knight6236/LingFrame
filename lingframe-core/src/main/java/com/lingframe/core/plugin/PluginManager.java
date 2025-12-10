@@ -12,8 +12,10 @@ import com.lingframe.core.spi.PluginContainer;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.File;
+import java.lang.reflect.Method;
 import java.net.URL;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.*;
 
@@ -32,6 +34,9 @@ public class PluginManager {
 
     // 插件槽位表：Key=PluginId, Value=Slot
     private final Map<String, PluginSlot> slots = new ConcurrentHashMap<>();
+
+    // 【新增】协议服务注册表：Key=FQSID (Fully Qualified Service ID), Value=PluginId
+    private final Map<String, String> protocolServiceRegistry = new ConcurrentHashMap<>();
 
     // 全局清理调度器 (单线程即可，任务很轻)
     private final ScheduledExecutorService scheduler;
@@ -111,6 +116,10 @@ public class PluginManager {
      */
     public void doInstall(String pluginId, String version, File sourceFile) {
         try {
+            // 1. 插件 ID 冲突检查
+            if (slots.containsKey(pluginId)) {
+                log.warn("[{}] Slot already exists. Preparing for upgrade.", pluginId);
+            }
             // 准备隔离环境 (Child-First ClassLoader)
             ClassLoader pluginClassLoader = createPluginClassLoader(sourceFile);
 
@@ -120,7 +129,6 @@ public class PluginManager {
 
             // 获取或创建槽位
             PluginSlot slot = slots.computeIfAbsent(pluginId, k -> new PluginSlot(k, scheduler, permissionService));
-
             // 创建上下文
             PluginContext context = new CorePluginContext(pluginId, this, permissionService, eventBus);
 
@@ -147,6 +155,9 @@ public class PluginManager {
             log.warn("Plugin not found: {}", pluginId);
             return;
         }
+
+        // 1. 【新增】从中央注册表移除所有 FQSID
+        unregisterProtocolServices(pluginId);
 
         // 委托槽位执行优雅下线
         slot.uninstall();
@@ -221,6 +232,78 @@ public class PluginManager {
 
         slots.clear();
         log.info("PluginManager shutdown complete.");
+    }
+
+    /**
+     * 处理协议调用 (由 CorePluginContext.invoke 调用)
+     *
+     * @param callerPluginId 调用方插件ID (用于审计)
+     * @param fqsid 全路径服务ID (Plugin ID:Short ID)
+     * @param args 参数列表
+     * @return 方法执行结果
+     */
+    @SuppressWarnings("unchecked")
+    public <T> Optional<T> invokeService(String callerPluginId, String fqsid, Object... args) {
+        // 1. 查找路由目标插件
+        String targetPluginId = protocolServiceRegistry.get(fqsid);
+        if (targetPluginId == null) {
+            log.warn("[{}] Service not found for FQSID: {}", callerPluginId, fqsid);
+            return Optional.empty();
+        }
+
+        // 2. 获取目标槽位
+        PluginSlot slot = slots.get(targetPluginId); //
+        if (slot == null) {
+            log.error("PluginSlot not found for PluginId: {}", targetPluginId);
+            return Optional.empty();
+        }
+
+        // 3. 委托给 PluginSlot 执行路由调用
+        try {
+            // PluginSlot.invokeService 方法需要实现 FQSID 到 MethodHandle 的查找和执行
+            Object result = slot.invokeService(callerPluginId, fqsid, args);
+            // 修正错误：进行显式类型转换
+            return Optional.ofNullable((T) result);
+        } catch (Exception e) {
+            log.error("[{}] Error invoking service {} in slot {}", callerPluginId, fqsid, targetPluginId, e);
+            throw new RuntimeException("Protocol service invocation error: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 供 Runtime 层调用的注册通道
+     * 接收真实的 Bean 和 Method 引用
+     */
+    public void registerProtocolService(String pluginId, String fqsid, Object bean, Method method) {
+        // 1. 注册路由表 (FQSID -> PluginId)
+        if (protocolServiceRegistry.containsKey(fqsid)) {
+            String existing = protocolServiceRegistry.get(fqsid);
+            if (!existing.equals(pluginId)) {
+                log.warn("FQSID Conflict! [{}] owned by [{}] is being overwritten by [{}]", fqsid, existing, pluginId);
+            }
+        }
+        protocolServiceRegistry.put(fqsid, pluginId);
+
+        // 2. 注册到 Slot 的执行缓存 (FQSID -> MethodHandle)
+        PluginSlot slot = slots.get(pluginId);
+        if (slot != null) {
+            slot.registerService(fqsid, bean, method);
+        }
+
+        log.info("[{}] Registered Service: {}", pluginId, fqsid);
+    }
+
+    /**
+     * 从中央注册表移除 FQSID
+     */
+    private void unregisterProtocolServices(String pluginId) { //
+        protocolServiceRegistry.entrySet().removeIf(entry -> {
+            if (entry.getValue().equals(pluginId)) {
+                log.info("[{}] Unregistered FQSID: {}", pluginId, entry.getKey());
+                return true;
+            }
+            return false;
+        });
     }
 
     /**
