@@ -30,7 +30,6 @@
         <jsqlparser.version>5.3</jsqlparser.version>
         <guava.version>33.4.8-jre</guava.version>
         <mybatis-flex.version>1.11.4</mybatis-flex.version>
-        <pf4j.version>3.14.0</pf4j.version>
         <mysql.version>8.3.0</mysql.version>
         <hikaricp.version>5.1.0</hikaricp.version>
         <lombok.version>1.18.30</lombok.version>

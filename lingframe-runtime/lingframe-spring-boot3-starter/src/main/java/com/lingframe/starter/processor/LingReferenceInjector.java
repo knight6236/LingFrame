@@ -17,8 +17,12 @@ public class LingReferenceInjector implements BeanPostProcessor {
 
     private final PluginManager pluginManager;
 
+    /**
+     * 从 postProcessAfterInitialization 改为 postProcessBeforeInitialization
+     * 确保在 AOP 代理创建之前，把属性注入到原始对象(Target)中。
+     */
     @Override
-    public Object postProcessAfterInitialization(Object bean, @NonNull String beanName) throws BeansException {
+    public Object postProcessBeforeInitialization(Object bean, @NonNull String beanName) throws BeansException {
         Class<?> clazz = bean.getClass();
 
         // 递归处理所有字段 (包括父类)
@@ -29,6 +33,12 @@ public class LingReferenceInjector implements BeanPostProcessor {
             }
         });
 
+        return bean;
+    }
+
+    // postProcessAfterInitialization 保持默认（直接返回 bean）即可，或者不重写
+    @Override
+    public Object postProcessAfterInitialization(@NonNull Object bean, @NonNull String beanName) throws BeansException {
         return bean;
     }
 
