@@ -6,12 +6,23 @@ import com.lingframe.api.plugin.LingPlugin;
 import com.lingframe.core.context.CorePluginContext;
 import com.lingframe.core.plugin.PluginManager;
 import com.lingframe.core.spi.PluginContainer;
+import com.lingframe.starter.web.WebInterfaceManager;
+import com.lingframe.starter.web.WebInterfaceMetadata;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.aop.support.AopUtils;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.core.DefaultParameterNameDiscoverer;
+import org.springframework.core.ParameterNameDiscoverer;
 import org.springframework.core.annotation.AnnotatedElementUtils;
 import org.springframework.util.ReflectionUtils;
+import org.springframework.web.bind.annotation.*;
+
+import java.lang.reflect.Method;
+import java.lang.reflect.Parameter;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 
 @Slf4j
 public class SpringPluginContainer implements PluginContainer {
@@ -21,6 +32,9 @@ public class SpringPluginContainer implements PluginContainer {
     private final ClassLoader classLoader;
     // 保存 Context 以便 stop 时使用
     private PluginContext pluginContext;
+
+    // 🔥【新增】实例化一个发现器
+    private final ParameterNameDiscoverer nameDiscoverer = new DefaultParameterNameDiscoverer();
 
     public SpringPluginContainer(SpringApplicationBuilder builder, ClassLoader classLoader) {
         this.builder = builder;
@@ -67,7 +81,10 @@ public class SpringPluginContainer implements PluginContainer {
             cxt.addApplicationListener(event -> {
                 if (event instanceof org.springframework.context.event.ContextRefreshedEvent) {
                     log.info("All beans initialized, registering LingServices for plugin: {}", pluginContext.getPluginId());
+                    // 注册 RPC 服务
                     scanAndRegisterLingServices();
+                    // 注册 Web Controller
+                    scanAndRegisterControllers();
                 }
             });
         } else {
@@ -76,6 +93,7 @@ public class SpringPluginContainer implements PluginContainer {
                 try {
                     Thread.sleep(1000); // 等待1秒确保初始化完成
                     scanAndRegisterLingServices();
+                    scanAndRegisterControllers();
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 }
@@ -84,6 +102,7 @@ public class SpringPluginContainer implements PluginContainer {
             delayRegistrationThread.start();
         }
         scanAndRegisterLingServices();
+        scanAndRegisterControllers();
     }
 
     /**
@@ -122,6 +141,114 @@ public class SpringPluginContainer implements PluginContainer {
             } catch (Exception e) {
                 log.warn("Error scanning bean {} for LingServices", beanName, e);
             }
+        }
+    }
+
+    /**
+     * 扫描并解析 @RestController
+     */
+    private void scanAndRegisterControllers() {
+        if (!(pluginContext instanceof CorePluginContext)) return;
+        String pluginId = pluginContext.getPluginId();
+
+        // 1. 获取所有 @RestController
+        Map<String, Object> controllers = context.getBeansWithAnnotation(RestController.class);
+
+        for (Object bean : controllers.values()) {
+            try {
+                Class<?> targetClass = AopUtils.getTargetClass(bean);
+
+                // 2. 解析类级 @RequestMapping
+                String baseUrl = "";
+                RequestMapping classMapping = AnnotatedElementUtils.findMergedAnnotation(targetClass, RequestMapping.class);
+                if (classMapping != null && classMapping.path().length > 0) {
+                    baseUrl = classMapping.path()[0];
+                }
+
+                // 3. 遍历方法
+                String finalBaseUrl = baseUrl;
+                ReflectionUtils.doWithMethods(targetClass, method -> {
+                    // 查找 RequestMapping (包含 GetMapping, PostMapping 等)
+                    RequestMapping mapping = AnnotatedElementUtils.findMergedAnnotation(method, RequestMapping.class);
+                    if (mapping != null) {
+                        registerControllerMethod(pluginId, bean, method, finalBaseUrl, mapping);
+                    }
+                });
+            } catch (Exception e) {
+                log.error("Failed to parse controller bean in plugin: {}", pluginId, e);
+            }
+        }
+    }
+
+    /**
+     * 解析单个方法并生成元数据
+     */
+    private void registerControllerMethod(String pluginId, Object bean, Method method, String baseUrl, RequestMapping mapping) {
+        // 1. URL 拼接: /pluginId/classUrl/methodUrl
+        String methodUrl = mapping.path().length > 0 ? mapping.path()[0] : "";
+        String fullPath = ("/" + pluginId + "/" + baseUrl + "/" + methodUrl).replaceAll("/+", "/");
+
+        // 2. HTTP Method
+        String httpMethod = mapping.method().length > 0 ? mapping.method()[0].name() : "GET"; // 默认 GET
+
+        // 3. 解析参数 (为三段式绑定做准备)
+        // 🔥【修改】获取真实的参数名列表 (开启 -parameters 后这里就能拿到了)
+        String[] paramNames = nameDiscoverer.getParameterNames(method);
+        Parameter[] parameters = method.getParameters();
+
+        List<WebInterfaceMetadata.ParamDef> params = new ArrayList<>();
+
+        for (int i = 0; i < parameters.length; i++) {
+            Parameter p = parameters[i];
+            WebInterfaceMetadata.ParamType type = WebInterfaceMetadata.ParamType.UNKNOWN;
+
+            // 【核心逻辑】名字获取优先级：
+            // 1. 注解显式指定 @PathVariable("uid")
+            // 2. 编译器保留的参数名 (开启 -parameters 后)
+            // 3. 字节码解析 (ASM)
+            // 4. 原生反射 (arg0)
+            String name = p.getName(); // 默认 arg0
+            if (paramNames != null && paramNames.length > i && paramNames[i] != null) {
+                name = paramNames[i];  // 拿到真实名字 id
+            }
+
+            if (p.isAnnotationPresent(PathVariable.class)) {
+                type = WebInterfaceMetadata.ParamType.PATH_VARIABLE;
+                String val = p.getAnnotation(PathVariable.class).value();
+                if (!val.isEmpty()) name = val; // 如果注解指定了名字，优先级最高
+            } else if (p.isAnnotationPresent(RequestBody.class)) {
+                type = WebInterfaceMetadata.ParamType.REQUEST_BODY;
+            } else if (p.isAnnotationPresent(RequestParam.class)) {
+                type = WebInterfaceMetadata.ParamType.REQUEST_PARAM;
+                String val = p.getAnnotation(RequestParam.class).value();
+                if (!val.isEmpty()) name = val;
+            }
+
+            params.add(WebInterfaceMetadata.ParamDef.builder()
+                    .name(name)
+                    .type(p.getType())
+                    .sourceType(type)
+                    .build());
+        }
+
+        // 4. 构建元数据
+        WebInterfaceMetadata metadata = WebInterfaceMetadata.builder()
+                .pluginId(pluginId)
+                .targetBean(bean)
+                .targetMethod(method)
+                .classLoader(this.classLoader)
+                .urlPattern(fullPath)
+                .httpMethod(httpMethod)
+                .parameters(params)
+                .build();
+
+        // 5. 打印验证 & TODO: 注册到 WebInterfaceManager
+        log.info("🌍 [LingFrame Web] Found Controller: {} [{}] -> Params: {}",
+                httpMethod, fullPath, params.size());
+
+        // 注册时调用 Starter 包里的 Manager
+        if (WebInterfaceManager.getInstance() != null) {
+            WebInterfaceManager.getInstance().register(metadata);
         }
     }
 

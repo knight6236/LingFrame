@@ -2,6 +2,7 @@ package com.lingframe.starter.adapter;
 
 import com.lingframe.core.spi.ContainerFactory;
 import com.lingframe.core.spi.PluginContainer;
+import com.lingframe.starter.processor.LingReferenceInjector;
 import org.springframework.boot.Banner;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.builder.SpringApplicationBuilder;
@@ -52,6 +53,7 @@ public class SpringContainerFactory implements ContainerFactory {
                     .parent((ConfigurableApplicationContext) parentContext) // 父子上下文
                     .resourceLoader(new DefaultResourceLoader(classLoader)) // 使用隔离加载器
                     .sources(sourceClass)
+                    .sources(LingReferenceInjector.class)// 强制注册 LingReferenceInjector
                     .bannerMode(Banner.Mode.OFF)
                     .web(WebApplicationType.NONE) // 【生产级】禁止插件启动 Tomcat
                     .properties("spring.main.allow-bean-definition-overriding=true") // 【生产级】允许覆盖 Bean

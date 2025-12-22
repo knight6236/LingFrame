@@ -9,10 +9,20 @@ import com.lingframe.core.security.DefaultPermissionService;
 import com.lingframe.core.spi.ContainerFactory;
 import com.lingframe.starter.adapter.SpringContainerFactory;
 import com.lingframe.starter.processor.LingReferenceInjector;
+import com.lingframe.starter.web.LingWebProxyController;
+import com.lingframe.starter.web.WebInterfaceManager;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.ApplicationContext;
+import org.springframework.context.ApplicationListener;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.event.ContextRefreshedEvent;
+import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
+
+import java.lang.reflect.Method;
 
 @Configuration
 public class LingFrameAutoConfiguration {
@@ -56,5 +66,37 @@ public class LingFrameAutoConfiguration {
     @Bean
     public LingReferenceInjector lingReferenceInjector(PluginManager pluginManager) {
         return new LingReferenceInjector(pluginManager);
+    }
+
+    @Bean
+    public WebInterfaceManager webInterfaceManager() {
+        return new WebInterfaceManager();
+    }
+
+    @Bean
+    public LingWebProxyController lingWebProxyController(WebInterfaceManager manager) {
+        return new LingWebProxyController(manager);
+    }
+
+    @Bean
+    public ApplicationListener<ContextRefreshedEvent> lingWebInitializer(
+            WebInterfaceManager manager,
+            LingWebProxyController controller,
+            @Qualifier("requestMappingHandlerMapping") RequestMappingHandlerMapping hostMapping
+    ) {
+        return event -> {
+            if (event.getApplicationContext().getParent() == null) { // 仅 Host 容器执行
+                try {
+                    // 获取 dispatch 方法反射对象
+                    Method method = LingWebProxyController.class.getMethod(
+                            "dispatch", HttpServletRequest.class, HttpServletResponse.class);
+
+                    manager.init(hostMapping, controller, method);
+
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+        };
     }
 }

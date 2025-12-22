@@ -25,7 +25,7 @@
         <module>lingframe-core</module>
         <module>lingframe-runtime</module>
         <module>lingframe-plugins-infra</module>
-        <module>lingframe-samples</module>
+        <module>lingframe-examples</module>
     </modules>
 
     <build>
