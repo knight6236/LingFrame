@@ -15,6 +15,8 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -25,11 +27,29 @@ import java.util.concurrent.atomic.AtomicReference;
 public class SmartServiceProxy implements InvocationHandler {
 
     private final String callerPluginId; // 谁在调用
-    private final String targetPluginId; // 🔥【新增】目标插件ID
+    private final String targetPluginId; // 🔥目标插件ID
     private final AtomicReference<PluginInstance> activeInstanceRef;
     private final Class<?> serviceInterface;
     private final GovernanceKernel governanceKernel;// 内核
     private final PermissionService permissionService; // 鉴权服务
+
+    // 🔥元数据缓存：避免每次调用都进行昂贵的跨ClassLoader反射
+    // Key: 接口方法对象, Value: 审计注解 (如果没有则存 null)
+    private static final Map<Method, Auditable> AUDIT_CACHE = new ConcurrentHashMap<>();
+    // 标记对象，用于缓存中表示"无注解"，防止穿透
+    private static final Auditable NULL_ANNOTATION = new Auditable() {
+        public Class<? extends java.lang.annotation.Annotation> annotationType() {
+            return Auditable.class;
+        }
+
+        public String action() {
+            return "";
+        }
+
+        public String resource() {
+            return "";
+        }
+    };
 
     public SmartServiceProxy(String callerPluginId, String targetPluginId,
                              AtomicReference<PluginInstance> activeInstanceRef,
@@ -62,9 +82,25 @@ public class SmartServiceProxy implements InvocationHandler {
         // B. 审计推导
         boolean shouldAudit = false;
         String auditAction = method.getName();
-        Auditable auditAnn = method.getAnnotation(Auditable.class);
 
-        if (auditAnn != null) {
+        // 步骤 A: 先从缓存拿
+        Auditable auditAnn = AUDIT_CACHE.get(method);
+
+        // 步骤 B: 缓存未命中，开始查找
+        if (auditAnn == null) {
+            // B1. 查接口 (优先)
+            auditAnn = method.getAnnotation(Auditable.class);
+
+            // B2. 查实现类 (如果接口没有)
+            if (auditAnn == null) {
+                auditAnn = findAnnotationOnImplementation(method);
+            }
+
+            // B3. 写入缓存
+            AUDIT_CACHE.put(method, (auditAnn == null) ? NULL_ANNOTATION : auditAnn);
+        }
+
+        if (auditAnn != null && auditAnn != NULL_ANNOTATION) {
             shouldAudit = true;
             auditAction = auditAnn.action();
         } else {
@@ -100,6 +136,45 @@ public class SmartServiceProxy implements InvocationHandler {
                 throw new RuntimeException(e);
             }
         });
+    }
+
+    /**
+     * 🔥【核心】跨 ClassLoader 查找实现类上的注解
+     */
+    private Auditable findAnnotationOnImplementation(Method interfaceMethod) {
+        PluginInstance instance = activeInstanceRef.get();
+        if (instance == null || !instance.getContainer().isActive()) {
+            return null;
+        }
+
+        // 必须切换到插件的 ClassLoader，否则我们看不见实现类，也无法反射获取它的 Method
+        Thread t = Thread.currentThread();
+        ClassLoader oldCL = t.getContextClassLoader();
+        ClassLoader pluginCL = instance.getContainer().getClassLoader();
+
+        t.setContextClassLoader(pluginCL);
+        try {
+            // 1. 获取目标 Bean (实现类对象)
+            Object targetBean = instance.getContainer().getBean(serviceInterface);
+            if (targetBean == null) return null;
+
+            // 2. 获取实现类 Class
+            Class<?> targetClass = targetBean.getClass(); // e.g., UserOrderService
+
+            // 3. 反射获取对应的实现方法
+            // 注意：这里需要精准匹配参数类型
+            Method implMethod = targetClass.getMethod(interfaceMethod.getName(), interfaceMethod.getParameterTypes());
+
+            // 4. 获取注解
+            return implMethod.getAnnotation(Auditable.class);
+
+        } catch (Exception e) {
+            // 比如方法没找到，或者Bean没初始化好，忽略异常，视为无注解
+            log.trace("Failed to find implementation annotation for {}", interfaceMethod.getName());
+            return null;
+        } finally {
+            t.setContextClassLoader(oldCL);
+        }
     }
 
     private Object doInvoke(Method method, Object[] args) throws Throwable {

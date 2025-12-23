@@ -22,13 +22,11 @@ public class GovernanceKernel {
         // 1. Trace 开启
         boolean isRootTrace = (TraceContext.get() == null);
 
-        // 修正：使用新增的 setTraceId 方法
         if (ctx.getTraceId() != null) {
             TraceContext.setTraceId(ctx.getTraceId());
         } else if (isRootTrace) {
             TraceContext.start();
         }
-
         // 回填 Context，确保后续 Audit 能拿到最终的 ID
         ctx.setTraceId(TraceContext.get());
 
@@ -36,15 +34,23 @@ public class GovernanceKernel {
         boolean success = false;
         Object result = null;
         Throwable error = null;
-
         try {
             // 2. Auth 鉴权
             // 2.1 检查插件级权限
+            // 这一步必须查 Target，因为如果 Target 挂了，谁调都没用
             if (!permissionService.isAllowed(ctx.getPluginId(), "PLUGIN_ENABLE", AccessType.EXECUTE)) {
                 throw new SecurityException("Plugin is disabled: " + ctx.getPluginId());
             }
 
-            // 2.2 核心检查：检查推导出的权限
+            // 2.2 核心检查：检查推导出的权限(始终检查 Caller)
+            // 🔥无论是 Web 还是 RPC，永远检查 Caller
+            // Web 请求的 Caller 是 "host-gateway"
+            // RPC 请求的 Caller 是 "order-plugin"
+            String callerId = ctx.getCallerPluginId();
+            if (callerId == null) {
+                callerId = ctx.getPluginId();
+            }
+
             // 如果 Adapter 没推导出权限，则默认检查 resourceId
             String perm = ctx.getRequiredPermission();
             if (perm == null || perm.isBlank()) {
@@ -54,13 +60,13 @@ public class GovernanceKernel {
             // 使用上下文指定的 AccessType，默认为 EXECUTE
             AccessType type = ctx.getAccessType() != null ? ctx.getAccessType() : AccessType.EXECUTE;
 
-            if (!permissionService.isAllowed(ctx.getPluginId(), perm, type)) {
-                log.warn("⛔ Permission Denied: Plugin=[{}] needs=[{}] type=[{}]", ctx.getPluginId(), perm, type);
+            if (!permissionService.isAllowed(callerId, perm, type)) {
+                log.warn("⛔ Permission Denied: Plugin=[{}] needs=[{}] type=[{}]", callerId, perm, type);
                 throw new SecurityException("Access Denied: " + perm);
             }
 
             // 2.3 检查资源级权限
-            if (!permissionService.isAllowed(ctx.getPluginId(), ctx.getResourceId(), AccessType.EXECUTE)) {
+            if (!permissionService.isAllowed(callerId, ctx.getResourceId(), AccessType.EXECUTE)) {
                 throw new SecurityException("Access Denied: " + ctx.getResourceId());
             }
 
@@ -88,7 +94,7 @@ public class GovernanceKernel {
                 try {
                     AuditManager.asyncRecord(
                             ctx.getTraceId(),
-                            ctx.getPluginId(), // 记录谁被调用，或者记录 ctx.getCallerPluginId()
+                            ctx.getCallerPluginId() != null ? ctx.getCallerPluginId() : ctx.getPluginId(), // 记录谁被调用，或者记录 ctx.getCallerPluginId()
                             action,
                             ctx.getResourceId(),
                             ctx.getArgs(),
