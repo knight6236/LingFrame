@@ -53,7 +53,6 @@ public class SpringContainerFactory implements ContainerFactory {
                     .parent((ConfigurableApplicationContext) parentContext) // 父子上下文
                     .resourceLoader(new DefaultResourceLoader(classLoader)) // 使用隔离加载器
                     .sources(sourceClass)
-                    .sources(LingReferenceInjector.class)// 强制注册 LingReferenceInjector
                     .bannerMode(Banner.Mode.OFF)
                     .web(WebApplicationType.NONE) // 【生产级】禁止插件启动 Tomcat
                     .properties("spring.main.allow-bean-definition-overriding=true") // 【生产级】允许覆盖 Bean

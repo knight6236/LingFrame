@@ -9,12 +9,14 @@ import com.lingframe.core.context.CorePluginContext;
 import com.lingframe.core.plugin.PluginManager;
 import com.lingframe.core.spi.PluginContainer;
 import com.lingframe.core.strategy.GovernanceStrategy;
+import com.lingframe.starter.processor.LingReferenceInjector;
 import com.lingframe.starter.web.WebInterfaceManager;
 import com.lingframe.starter.web.WebInterfaceMetadata;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.aop.support.AopUtils;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.context.support.GenericApplicationContext;
 import org.springframework.core.DefaultParameterNameDiscoverer;
 import org.springframework.core.ParameterNameDiscoverer;
 import org.springframework.core.annotation.AnnotatedElementUtils;
@@ -36,7 +38,7 @@ public class SpringPluginContainer implements PluginContainer {
     // 保存 Context 以便 stop 时使用
     private PluginContext pluginContext;
 
-    // 🔥【新增】实例化一个发现器
+    // 🔥实例化一个发现器
     private final ParameterNameDiscoverer nameDiscoverer = new DefaultParameterNameDiscoverer();
 
     public SpringPluginContainer(SpringApplicationBuilder builder, ClassLoader classLoader) {
@@ -53,6 +55,12 @@ public class SpringPluginContainer implements PluginContainer {
         ClassLoader old = t.getContextClassLoader();
         t.setContextClassLoader(classLoader);
         try {
+            // 🔥添加初始化器：在 Spring 启动前注册关键组件
+            builder.initializers(applicationContext -> {
+                if (applicationContext instanceof GenericApplicationContext gac) {
+                    registerBeans(gac, classLoader);
+                }
+            });
             // 2. 启动 Spring
             this.context = builder.run();
 
@@ -72,6 +80,28 @@ public class SpringPluginContainer implements PluginContainer {
 
         } finally {
             t.setContextClassLoader(old);
+        }
+    }
+
+    /**
+     * 🔥手动注册核心 Bean
+     * 这一步至关重要，它确保了插件内部的 Bean 能拿到正确的 PluginManager 和身份信息
+     */
+    private void registerBeans(GenericApplicationContext context, ClassLoader pluginClassLoader) {
+        if (pluginContext instanceof CorePluginContext coreCtx) {
+            PluginManager pluginManager = coreCtx.getPluginManager();
+            String pluginId = pluginContext.getPluginId();
+
+            // 1. 注册 PluginManager (供插件内部使用)
+            context.registerBean(PluginManager.class, () -> pluginManager);
+
+            // 2. 注册插件专用的 LingReferenceInjector
+            // 这样插件里的 Bean 被注入代理时，callerId 就是插件自己的 ID，而不是 host-app
+            context.registerBean(LingReferenceInjector.class, () ->
+                    new LingReferenceInjector(pluginManager, pluginId)
+            );
+
+            log.info("Injecting core beans for plugin [{}]: PluginManager, LingReferenceInjector", pluginId);
         }
     }
 

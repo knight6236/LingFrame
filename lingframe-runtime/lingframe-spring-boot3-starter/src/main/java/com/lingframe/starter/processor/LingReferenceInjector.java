@@ -17,6 +17,8 @@ public class LingReferenceInjector implements BeanPostProcessor {
 
     private final PluginManager pluginManager;
 
+    private final String currentPluginId; // 🔥记录当前环境的插件ID
+
     /**
      * 从 postProcessAfterInitialization 改为 postProcessBeforeInitialization
      * 确保在 AOP 代理创建之前，把属性注入到原始对象(Target)中。
@@ -43,19 +45,20 @@ public class LingReferenceInjector implements BeanPostProcessor {
     }
 
     private void injectService(Object bean, Field field, LingReference annotation) {
-        Class<?> serviceType = field.getType();
-        String targetPluginId = annotation.pluginId();
-
-        // 创建全局路由代理
-        // 这里的 callerPluginId 先硬编码为 "host-app"，实际可以做得更细
-        Object proxy = pluginManager.getGlobalServiceProxy(
-                "host-app",
-                serviceType,
-                targetPluginId
-        );
-
         try {
             field.setAccessible(true);
+            Class<?> serviceType = field.getType();
+            String targetPluginId = annotation.pluginId();
+            // 🔥使用构造函数传入的 currentPluginId，而不是写死或猜
+            String callerId = (currentPluginId != null) ? currentPluginId : "host-app";
+
+            // 创建全局路由代理
+            // 这里的 callerPluginId 先硬编码为 "host-app"，实际可以做得更细
+            Object proxy = pluginManager.getGlobalServiceProxy(
+                    callerId,
+                    serviceType,
+                    targetPluginId
+            );
             field.set(bean, proxy);
             log.info("Injected @LingReference for field: {}.{}",
                     bean.getClass().getSimpleName(), field.getName());
