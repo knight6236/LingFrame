@@ -2,6 +2,7 @@ package com.lingframe.core.plugin;
 
 import com.lingframe.api.context.PluginContext;
 import com.lingframe.api.security.PermissionService;
+import com.lingframe.core.governance.GovernanceArbitrator;
 import com.lingframe.core.kernel.GovernanceKernel;
 import com.lingframe.core.kernel.InvocationContext;
 import com.lingframe.core.proxy.SmartServiceProxy;
@@ -58,6 +59,8 @@ public class PluginSlot {
 
     private final GovernanceKernel governanceKernel;
 
+    private final GovernanceArbitrator governanceArbitrator;
+
     private final ScheduledExecutorService sharedScheduler;
 
     // ================= 线程池配置 =================
@@ -72,11 +75,14 @@ public class PluginSlot {
     // 专用执行器，用于运行插件方法（隔离线程池）
     private final ExecutorService pluginExecutor;
 
-    public PluginSlot(String pluginId, ScheduledExecutorService sharedScheduler, PermissionService permissionService, GovernanceKernel governanceKernel) {
+    public PluginSlot(String pluginId, ScheduledExecutorService sharedScheduler,
+                              PermissionService permissionService, GovernanceKernel governanceKernel,
+                              GovernanceArbitrator governanceArbitrator) {
         this.pluginId = pluginId;
         this.sharedScheduler = sharedScheduler;
         this.permissionService = permissionService;
         this.governanceKernel = governanceKernel;
+        this.governanceArbitrator = governanceArbitrator;
         // 清理任务调度器：共享的全局线程池
         // 每 5 秒检查一次是否有可以回收的旧实例
         if (sharedScheduler != null) {
@@ -211,7 +217,7 @@ public class PluginSlot {
                                 this,// 调谁 (就是当前 Slot) 🔥
                                 interfaceClass,
                                 governanceKernel,
-                                permissionService
+                                governanceArbitrator
                         )
                 ));
     }

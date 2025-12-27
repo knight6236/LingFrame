@@ -1,7 +1,9 @@
 package com.lingframe.core.plugin;
 
+import com.lingframe.api.config.PluginDefinition;
 import com.lingframe.core.spi.PluginContainer;
 import lombok.Getter;
+import lombok.Setter;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -9,9 +11,10 @@ import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * 插件实例：代表一个特定版本的插件运行实体
- * 包含：容器引用 + 引用计数器
+ * 包含：容器引用 + 引用计数器 + 完整定义契约
  */
 @Getter
+@Setter
 public class PluginInstance {
 
     private final String version;
@@ -29,6 +32,9 @@ public class PluginInstance {
 
     // 就绪状态
     private volatile boolean ready = false;
+
+    // 插件完整定义 (包含治理配置、扩展参数等)
+    private PluginDefinition definition;
 
     public PluginInstance(String version, PluginContainer container) {
         this.version = version;

@@ -18,7 +18,12 @@ class PluginSlotRoutingTest {
 
     @BeforeEach
     void setUp() {
-        slot = new PluginSlot("user-plugin", Executors.newSingleThreadScheduledExecutor(), null, null);
+        slot = new PluginSlot(
+                "user-plugin",
+                Executors.newSingleThreadScheduledExecutor(),
+                null,
+                null,
+                null);
         mockCtx = mock(PluginContext.class);
     }
 

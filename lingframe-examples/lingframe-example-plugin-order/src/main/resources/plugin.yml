@@ -1,9 +1,13 @@
 # --- 基础元数据 (直接在根节点) ---
-id: user-plugin
+id: order-plugin
 version: 1.0.0
 provider: "LingFrame"
-description: "用户插件"
-mainClass: "com.lingframe.example.plugin.user.UserPlugin"
+description: "订单插件"
+mainClass: "com.lingframe.example.plugin.order.OrderPlugin"
+
+dependencies:
+  - id: "user-plugin"
+    minVersion: "1.0.0"
 
 # --- 治理配置 (对应 private GovernancePolicy governance) ---
 governance:

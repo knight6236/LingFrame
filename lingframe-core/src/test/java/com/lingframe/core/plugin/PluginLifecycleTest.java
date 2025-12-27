@@ -16,7 +16,12 @@ class PluginLifecycleTest {
     @Test
     void testGracefulGcAfterUsage() throws InterruptedException {
         // 1. 初始化 Slot（使用单线程调度器）
-        PluginSlot slot = new PluginSlot("test-plugin", Executors.newSingleThreadScheduledExecutor(), null, null);
+        PluginSlot slot = new PluginSlot(
+                "test-plugin",
+                Executors.newSingleThreadScheduledExecutor(),
+                null,
+                null,
+                null);
 
         // 2. Mock 容器并设置打桩：必须让 isActive 返回 true，否则 destroy() 里的 stop() 不会执行
         PluginContainer container = mock(PluginContainer.class);
