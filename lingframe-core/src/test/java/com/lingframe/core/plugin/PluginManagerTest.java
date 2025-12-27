@@ -28,7 +28,8 @@ class PluginManagerTest {
 
         GovernanceKernel governanceKernel = new GovernanceKernel(null);
 
-        pluginManager = new PluginManager(containerFactory, new DefaultPermissionService(), governanceKernel);
+        pluginManager = new PluginManager(containerFactory, new DefaultPermissionService(), governanceKernel,
+                null, null, null, null);
     }
 
     @Test

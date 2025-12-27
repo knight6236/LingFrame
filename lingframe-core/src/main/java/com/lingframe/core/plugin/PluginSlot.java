@@ -1,7 +1,12 @@
 package com.lingframe.core.plugin;
 
 import com.lingframe.api.context.PluginContext;
+import com.lingframe.api.event.lifecycle.PluginStartedEvent;
+import com.lingframe.api.event.lifecycle.PluginStartingEvent;
+import com.lingframe.api.event.lifecycle.PluginStoppedEvent;
+import com.lingframe.api.event.lifecycle.PluginStoppingEvent;
 import com.lingframe.api.security.PermissionService;
+import com.lingframe.core.event.EventBus;
 import com.lingframe.core.governance.GovernanceArbitrator;
 import com.lingframe.core.kernel.GovernanceKernel;
 import com.lingframe.core.kernel.InvocationContext;
@@ -51,15 +56,15 @@ public class PluginSlot {
     // 代理缓存：Map<InterfaceClass, ProxyObject>
     private final Map<Class<?>, Object> proxyCache = new ConcurrentHashMap<>();
 
-    // 【新增】FQSID -> InvokableService 缓存 (用于协议服务)
+    // FQSID -> InvokableService 缓存 (用于协议服务)
     // 缓存 FQSID 对应的可执行方法和 Bean 实例
     private final Map<String, InvokableService> serviceMethodCache = new ConcurrentHashMap<>();
-
-    private final PermissionService permissionService;
 
     private final GovernanceKernel governanceKernel;
 
     private final GovernanceArbitrator governanceArbitrator;
+
+    private final EventBus eventBus;
 
     private final ScheduledExecutorService sharedScheduler;
 
@@ -76,13 +81,14 @@ public class PluginSlot {
     private final ExecutorService pluginExecutor;
 
     public PluginSlot(String pluginId, ScheduledExecutorService sharedScheduler,
-                              PermissionService permissionService, GovernanceKernel governanceKernel,
-                              GovernanceArbitrator governanceArbitrator) {
+                      GovernanceKernel governanceKernel,
+                      GovernanceArbitrator governanceArbitrator,
+                      EventBus eventBus) {
         this.pluginId = pluginId;
         this.sharedScheduler = sharedScheduler;
-        this.permissionService = permissionService;
         this.governanceKernel = governanceKernel;
         this.governanceArbitrator = governanceArbitrator;
+        this.eventBus = eventBus;
         // 清理任务调度器：共享的全局线程池
         // 每 5 秒检查一次是否有可以回收的旧实例
         if (sharedScheduler != null) {
@@ -143,6 +149,11 @@ public class PluginSlot {
 
         // 2. 【无锁启动】耗时操作不占锁
         log.info("[{}] Starting new version: {}", pluginId, newInstance.getVersion());
+
+        // 🔥Hook 1: Pre-Start 发送 Starting 事件
+        // 如果有监听器抛出异常，addInstance 会在此中断，不会执行 container.start()
+        eventBus.publish(new PluginStartingEvent(pluginId, newInstance.getVersion()));
+
         try {
             newInstance.getContainer().start(pluginContext);
             // 【关键】等待就绪或设置就绪
@@ -190,10 +201,40 @@ public class PluginSlot {
                     moveToDying(old);// 安全，因为当前线程已持有 stateLock
                 }
             }
-            log.info("[{}] Version {} switched to Active.", pluginId, newInstance.getVersion());
         } finally {
             stateLock.unlock();
         }
+
+        // 🔥Hook 2: Post-Start (通知监控系统)
+        eventBus.publish(new PluginStartedEvent(pluginId, newInstance.getVersion()));
+        log.info("[{}] Version {} started.", pluginId, newInstance.getVersion());
+    }
+
+    /**
+     * 销毁实例 (带钩子)
+     */
+    private void destroyInstance(PluginInstance instance) {
+        if (!instance.getContainer().isActive()) return;
+
+        String version = instance.getVersion();
+        log.info("[{}] Stopping version: {}", pluginId, version);
+
+        // 🔥Hook 3: Pre-Stop (通知插件做优雅停机，如关闭连接池)
+        // 注意：停止过程通常不建议抛异常打断，除非是强制无法停止
+        try {
+            eventBus.publish(new PluginStoppingEvent(pluginId, version));
+        } catch (Exception e) {
+            log.error("Error in Pre-Stop hook", e);
+        }
+
+        try {
+            instance.destroy(); // 物理关闭
+        } catch (Exception e) {
+            log.error("Error destroying instance", e);
+        }
+
+        // 🔥Hook 4: Post-Stop (通知资源回收)
+        eventBus.publish(new PluginStoppedEvent(pluginId, version));
     }
 
     private void moveToDying(PluginInstance instance) {
@@ -311,10 +352,10 @@ public class PluginSlot {
         // 正常情况下，PluginContainer.start() 时会扫描并注册所有服务。
         // 如果运行时找不到，说明启动流程有问题或 FQSID 拼写错误。
         log.error("[LingFrame] Critical Error: FQSID [{}] not found in service registry. " +
-                  "This indicates a registration failure during plugin startup.", fqsid);
+                "This indicates a registration failure during plugin startup.", fqsid);
 
         throw new IllegalStateException("Service not found: " + fqsid +
-                                        ". Please check if the plugin started successfully.");
+                ". Please check if the plugin started successfully.");
     }
 
     /**
@@ -326,12 +367,7 @@ public class PluginSlot {
             try {
                 dyingInstances.removeIf(instance -> {
                     if (instance.isIdle()) {
-                        log.info("[{}] Garbage Collecting version: {}", pluginId, instance.getVersion());
-                        try {
-                            instance.destroy();
-                        } catch (Exception e) {
-                            log.error("Error destroying plugin instance", e);
-                        }
+                        destroyInstance(instance);
                         return true;
                     }
                     return false;
@@ -407,11 +443,7 @@ public class PluginSlot {
         // 这里不需要加锁，因为已经是卸载流程的终点了
         log.warn("[{}] Force cleanup triggered. Destroying remaining instances.", pluginId);
         dyingInstances.removeIf(instance -> {
-            try {
-                instance.destroy(); // destroy 内部应当是幂等的
-            } catch (Exception e) {
-                log.error("[{}] Error during force destroy of version {}", pluginId, instance.getVersion(), e);
-            }
+            destroyInstance(instance);
             return true;
         });
     }

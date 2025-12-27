@@ -31,7 +31,12 @@ public class EventBus {
                         LingEventListener<E> castListener = (LingEventListener<E>) listener;
                         castListener.onEvent(event);
                     }
+                } catch (RuntimeException e) {
+                    // 如果是核心业务异常，直接抛出！
+                    log.warn("Event listener threw exception, propagating: {}", e.getMessage());
+                    throw e;
                 } catch (Exception e) {
+                    // 对于 Checked Exception，记录日志
                     log.error("Error processing event", e);
                 }
             }
