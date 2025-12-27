@@ -1,18 +1,22 @@
 package com.lingframe.core.plugin;
 
+import com.lingframe.api.config.PluginDefinition;
 import com.lingframe.api.context.PluginContext;
 import com.lingframe.api.security.PermissionService;
 import com.lingframe.core.classloader.PluginClassLoader;
 import com.lingframe.core.context.CorePluginContext;
 import com.lingframe.core.dev.HotSwapWatcher;
 import com.lingframe.core.event.EventBus;
+import com.lingframe.core.governance.GovernanceArbitrator;
 import com.lingframe.core.kernel.GovernanceKernel;
+import com.lingframe.core.loader.PluginManifestLoader;
 import com.lingframe.core.proxy.GlobalServiceRoutingProxy;
 import com.lingframe.core.spi.ContainerFactory;
 import com.lingframe.core.spi.PluginContainer;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.net.URL;
@@ -52,6 +56,9 @@ public class PluginManager {
     // 内核
     private final GovernanceKernel governanceKernel;
 
+    // 治理规则
+    private final GovernanceArbitrator governanceArbitrator;
+
     // 记录插件源路径，用于 reload
     private final Map<String, File> pluginSources = new ConcurrentHashMap<>();
 
@@ -63,10 +70,12 @@ public class PluginManager {
     public PluginManager(ContainerFactory containerFactory,
                          PermissionService permissionService,
                          GovernanceKernel governanceKernel,
+                         GovernanceArbitrator governanceArbitrator,
                          EventBus eventBus) {
         this.containerFactory = containerFactory;
         this.permissionService = permissionService;
         this.governanceKernel = governanceKernel;
+        this.governanceArbitrator = governanceArbitrator;
         // 初始化热加载器
         this.hotSwapWatcher = new HotSwapWatcher(this);
         this.eventBus = eventBus;
@@ -144,6 +153,22 @@ public class PluginManager {
             if (slots.containsKey(pluginId)) {
                 log.warn("[{}] Slot already exists. Preparing for upgrade.", pluginId);
             }
+
+            // 1. 加载 plugin.yml 配置 (New)
+            PluginDefinition definition = null;
+            // 简单处理：如果是 Jar 包，需要解压读取；如果是目录，直接读。这里简化假设是目录或 Jar 内已处理
+            // 在生产环境中，通常在 ContainerFactory 内部处理，这里为了演示逻辑
+            File ymlFile = new File(sourceFile, "plugin.yml");
+            if (ymlFile.exists()) {
+                try (FileInputStream fis = new FileInputStream(ymlFile)) {
+                    definition = PluginManifestLoader.load(fis);
+                }
+            }
+            // 如果 definition 为空，创建一个默认的
+            if (definition == null) definition = new PluginDefinition();
+            definition.setId(pluginId);
+            definition.setVersion(version);
+
             // 准备隔离环境 (Child-First ClassLoader)
             ClassLoader pluginClassLoader = createPluginClassLoader(sourceFile);
 
@@ -152,10 +177,11 @@ public class PluginManager {
             PluginInstance instance = new PluginInstance(version, container);
             // 写入标签
             instance.getLabels().putAll(labels);
+            instance.setDefinition(definition); // [设置定义]
 
             // 获取或创建槽位
             PluginSlot slot = slots.computeIfAbsent(pluginId,
-                    k -> new PluginSlot(k, scheduler, permissionService, governanceKernel));
+                    k -> new PluginSlot(k, scheduler, permissionService, governanceKernel, governanceArbitrator));
             // 创建上下文
             PluginContext context = new CorePluginContext(pluginId, this, permissionService, governanceKernel, eventBus);
 
@@ -376,7 +402,7 @@ public class PluginManager {
                         targetPluginId,
                         this,
                         governanceKernel,
-                        permissionService
+                        governanceArbitrator
                 )
         );
     }

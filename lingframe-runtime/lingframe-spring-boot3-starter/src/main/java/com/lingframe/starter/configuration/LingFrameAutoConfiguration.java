@@ -33,9 +33,16 @@ import java.lang.reflect.Method;
 @EnableConfigurationProperties(LingFrameProperties.class)
 public class LingFrameAutoConfiguration {
 
+    // 将事件总线注册为 Bean (解耦)
     @Bean
-    public LocalGovernanceRegistry localGovernanceRegistry() {
-        return new LocalGovernanceRegistry();
+    @ConditionalOnMissingBean
+    public EventBus eventBus() {
+        return new EventBus();
+    }
+
+    @Bean
+    public LocalGovernanceRegistry localGovernanceRegistry(EventBus eventBus) {
+        return new LocalGovernanceRegistry(eventBus);
     }
 
     @Bean
@@ -45,18 +52,11 @@ public class LingFrameAutoConfiguration {
         return new GovernanceArbitrator(registry, properties.getForcePermissions());
     }
 
-    // 1. 将权限服务注册为 Bean (解耦)
+    // 将权限服务注册为 Bean (解耦)
     @Bean
     @ConditionalOnMissingBean
     public PermissionService permissionService() {
         return new DefaultPermissionService();
-    }
-
-    // 2. 将事件总线注册为 Bean (解耦)
-    @Bean
-    @ConditionalOnMissingBean
-    public EventBus eventBus() {
-        return new EventBus();
     }
 
     // 组装 GovernanceKernel
@@ -75,8 +75,9 @@ public class LingFrameAutoConfiguration {
     public PluginManager pluginManager(ContainerFactory containerFactory,
                                        PermissionService permissionService,
                                        GovernanceKernel governanceKernel,
+                                       GovernanceArbitrator governanceArbitrator,
                                        EventBus eventBus) {
-        return new PluginManager(containerFactory, permissionService, governanceKernel, eventBus);
+        return new PluginManager(containerFactory, permissionService, governanceKernel, governanceArbitrator, eventBus);
     }
 
     // 4. 【关键】额外注册一个代表宿主的 Context

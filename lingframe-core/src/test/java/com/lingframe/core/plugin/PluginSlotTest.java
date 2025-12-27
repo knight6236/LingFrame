@@ -1,6 +1,7 @@
 package com.lingframe.core.plugin;
 
 import com.lingframe.api.security.PermissionService;
+import com.lingframe.core.governance.GovernanceArbitrator;
 import com.lingframe.core.kernel.GovernanceKernel;
 import com.lingframe.core.security.DefaultPermissionService;
 import org.junit.jupiter.api.BeforeEach;
@@ -18,6 +19,7 @@ public class PluginSlotTest {
     private PermissionService permissionService;
     private ScheduledExecutorService scheduledExecutorService;
     private GovernanceKernel governanceKernel;
+    private GovernanceArbitrator governanceArbitrator;
 
     @BeforeEach
     void setUp() {
@@ -25,7 +27,12 @@ public class PluginSlotTest {
         permissionService = new DefaultPermissionService();
         scheduledExecutorService = Executors.newSingleThreadScheduledExecutor();
         governanceKernel = new GovernanceKernel(permissionService);
-        pluginSlot = new PluginSlot(pluginId, scheduledExecutorService, permissionService, governanceKernel);
+        pluginSlot = new PluginSlot(
+                pluginId,
+                scheduledExecutorService,
+                permissionService,
+                governanceKernel,
+                governanceArbitrator);
     }
 
     @Test
