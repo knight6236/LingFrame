@@ -2,6 +2,10 @@ package com.lingframe.core.plugin;
 
 import com.lingframe.api.config.PluginDefinition;
 import com.lingframe.api.context.PluginContext;
+import com.lingframe.api.event.lifecycle.PluginInstalledEvent;
+import com.lingframe.api.event.lifecycle.PluginInstallingEvent;
+import com.lingframe.api.event.lifecycle.PluginUninstalledEvent;
+import com.lingframe.api.event.lifecycle.PluginUninstallingEvent;
 import com.lingframe.api.security.PermissionService;
 import com.lingframe.core.classloader.PluginClassLoader;
 import com.lingframe.core.context.CorePluginContext;
@@ -13,6 +17,8 @@ import com.lingframe.core.loader.PluginManifestLoader;
 import com.lingframe.core.proxy.GlobalServiceRoutingProxy;
 import com.lingframe.core.spi.ContainerFactory;
 import com.lingframe.core.spi.PluginContainer;
+import com.lingframe.core.spi.PluginLoaderFactory;
+import com.lingframe.core.spi.PluginSecurityVerifier;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.File;
@@ -20,10 +26,7 @@ import java.io.FileInputStream;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.net.URL;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -59,6 +62,11 @@ public class PluginManager {
     // 治理规则
     private final GovernanceArbitrator governanceArbitrator;
 
+    private final PluginLoaderFactory loaderFactory;
+
+    // 安全验证器
+    private final List<PluginSecurityVerifier> verifiers;
+
     // 记录插件源路径，用于 reload
     private final Map<String, File> pluginSources = new ConcurrentHashMap<>();
 
@@ -71,11 +79,15 @@ public class PluginManager {
                          PermissionService permissionService,
                          GovernanceKernel governanceKernel,
                          GovernanceArbitrator governanceArbitrator,
+                         PluginLoaderFactory loaderFactory,
+                         List<PluginSecurityVerifier> verifiers,
                          EventBus eventBus) {
         this.containerFactory = containerFactory;
         this.permissionService = permissionService;
         this.governanceKernel = governanceKernel;
         this.governanceArbitrator = governanceArbitrator;
+        this.loaderFactory = loaderFactory;
+        this.verifiers = verifiers != null ? verifiers : Collections.emptyList(); // 防御性处理
         // 初始化热加载器
         this.hotSwapWatcher = new HotSwapWatcher(this);
         this.eventBus = eventBus;
@@ -149,6 +161,16 @@ public class PluginManager {
      */
     private void doInstall(String pluginId, String version, File sourceFile, boolean isDefault, Map<String, String> labels) {
         try {
+            // 执行所有安全验证器
+            if (verifiers != null) {
+                for (PluginSecurityVerifier verifier : verifiers) {
+                    verifier.verify(pluginId, sourceFile); // 失败直接抛异常退出
+                }
+            }
+
+            // 触发安装前置事件 (Hooks)
+            eventBus.publish(new PluginInstallingEvent(pluginId, version, sourceFile));
+
             // 1. 插件 ID 冲突检查
             if (slots.containsKey(pluginId)) {
                 log.warn("[{}] Slot already exists. Preparing for upgrade.", pluginId);
@@ -170,7 +192,7 @@ public class PluginManager {
             definition.setVersion(version);
 
             // 准备隔离环境 (Child-First ClassLoader)
-            ClassLoader pluginClassLoader = createPluginClassLoader(sourceFile);
+            ClassLoader pluginClassLoader = loaderFactory.create(sourceFile, this.getClass().getClassLoader());
 
             // SPI 构建容器 (此时仅创建配置，未启动)
             PluginContainer container = containerFactory.create(pluginId, sourceFile, pluginClassLoader);
@@ -181,12 +203,15 @@ public class PluginManager {
 
             // 获取或创建槽位
             PluginSlot slot = slots.computeIfAbsent(pluginId,
-                    k -> new PluginSlot(k, scheduler, permissionService, governanceKernel, governanceArbitrator));
+                    k -> new PluginSlot(k, scheduler, governanceKernel, governanceArbitrator, eventBus));
             // 创建上下文
             PluginContext context = new CorePluginContext(pluginId, this, permissionService, governanceKernel, eventBus);
 
             // 执行新增 (启动新容器 -> 原子切换流量 -> 旧容器进入死亡队列)
             slot.addInstance(instance, context, isDefault);
+
+            // 触发安装完成事件
+            eventBus.publish(new PluginInstalledEvent(pluginId, version));
         } catch (Exception e) {
             log.error("Failed to install/reload plugin: {} v{}", pluginId, version, e);
             // 抛出运行时异常，通知上层调用失败
@@ -202,6 +227,9 @@ public class PluginManager {
      */
     public void uninstall(String pluginId) {
         log.info("Uninstalling plugin: {}", pluginId);
+        // 🔥Hook 1: Pre-Uninstall (可被拦截，例如防止误删核心插件)
+        eventBus.publish(new PluginUninstallingEvent(pluginId));
+
         PluginSlot slot = slots.remove(pluginId);
         if (slot == null) {
             log.warn("Plugin not found: {}", pluginId);
@@ -213,6 +241,9 @@ public class PluginManager {
 
         // 委托槽位执行优雅下线
         slot.uninstall();
+
+        // 🔥Hook 2: Post-Uninstall (清理配置、删除临时文件)
+        eventBus.publish(new PluginUninstalledEvent(pluginId));
     }
 
     /**

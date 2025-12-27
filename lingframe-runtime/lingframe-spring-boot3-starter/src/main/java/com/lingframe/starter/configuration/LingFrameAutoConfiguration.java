@@ -2,14 +2,19 @@ package com.lingframe.starter.configuration;
 
 import com.lingframe.api.context.PluginContext;
 import com.lingframe.api.security.PermissionService;
+import com.lingframe.core.classloader.DefaultPluginLoaderFactory;
 import com.lingframe.core.context.CorePluginContext;
 import com.lingframe.core.event.EventBus;
 import com.lingframe.core.governance.GovernanceArbitrator;
 import com.lingframe.core.governance.LocalGovernanceRegistry;
+import com.lingframe.core.governance.provider.StandardGovernancePolicyProvider;
 import com.lingframe.core.kernel.GovernanceKernel;
 import com.lingframe.core.plugin.PluginManager;
 import com.lingframe.core.security.DefaultPermissionService;
 import com.lingframe.core.spi.ContainerFactory;
+import com.lingframe.core.spi.GovernancePolicyProvider;
+import com.lingframe.core.spi.PluginLoaderFactory;
+import com.lingframe.core.spi.PluginSecurityVerifier;
 import com.lingframe.starter.adapter.SpringContainerFactory;
 import com.lingframe.starter.config.LingFrameProperties;
 import com.lingframe.starter.processor.LingReferenceInjector;
@@ -28,6 +33,7 @@ import org.springframework.context.event.ContextRefreshedEvent;
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 
 import java.lang.reflect.Method;
+import java.util.List;
 
 @Configuration
 @EnableConfigurationProperties(LingFrameProperties.class)
@@ -45,11 +51,24 @@ public class LingFrameAutoConfiguration {
         return new LocalGovernanceRegistry(eventBus);
     }
 
+    // 默认的插件加载器工厂
     @Bean
-    public GovernanceArbitrator governanceArbitrator(LocalGovernanceRegistry registry,
-                                                     LingFrameProperties properties) {
+    @ConditionalOnMissingBean(PluginLoaderFactory.class)
+    public PluginLoaderFactory defaultPluginLoaderFactory() {
+        return new DefaultPluginLoaderFactory();
+    }
+
+    @Bean
+    public StandardGovernancePolicyProvider standardGovernancePolicyProvider(LocalGovernanceRegistry registry,
+                                                                             LingFrameProperties properties) {
         // 将 Spring 配置注入到纯 Java 的内核组件中
-        return new GovernanceArbitrator(registry, properties.getForcePermissions());
+        return new StandardGovernancePolicyProvider(registry, properties.getForcePermissions());
+    }
+
+    // 组装仲裁器：收集容器中所有的 PolicyProvider
+    @Bean
+    public GovernanceArbitrator governanceArbitrator(List<GovernancePolicyProvider> providers) {
+        return new GovernanceArbitrator(providers);
     }
 
     // 将权限服务注册为 Bean (解耦)
@@ -70,17 +89,19 @@ public class LingFrameAutoConfiguration {
         return new SpringContainerFactory(parentContext);
     }
 
-    // 3. PluginManager 依然是核心，但现在它依赖注入进来的组件
     @Bean
     public PluginManager pluginManager(ContainerFactory containerFactory,
                                        PermissionService permissionService,
                                        GovernanceKernel governanceKernel,
                                        GovernanceArbitrator governanceArbitrator,
+                                       PluginLoaderFactory pluginLoaderFactory,
+                                       List<PluginSecurityVerifier> verifiers,
                                        EventBus eventBus) {
-        return new PluginManager(containerFactory, permissionService, governanceKernel, governanceArbitrator, eventBus);
+        return new PluginManager(containerFactory, permissionService, governanceKernel,
+                governanceArbitrator, pluginLoaderFactory, verifiers, eventBus);
     }
 
-    // 4. 【关键】额外注册一个代表宿主的 Context
+    // 额外注册一个代表宿主的 Context
     @Bean
     public PluginContext hostPluginContext(PluginManager pluginManager,
                                            PermissionService permissionService,
