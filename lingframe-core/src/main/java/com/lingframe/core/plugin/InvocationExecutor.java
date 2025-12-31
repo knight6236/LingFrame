@@ -3,10 +3,13 @@ package com.lingframe.core.plugin;
 import com.lingframe.core.governance.DefaultTransactionVerifier;
 import com.lingframe.core.invoker.FastPluginServiceInvoker;
 import com.lingframe.core.monitor.TraceContext;
+import com.lingframe.core.plugin.event.RuntimeEvent;
+import com.lingframe.core.plugin.event.RuntimeEventBus;
 import com.lingframe.core.spi.PluginServiceInvoker;
 import com.lingframe.core.spi.ThreadLocalPropagator;
 import com.lingframe.core.spi.TransactionVerifier;
 import jakarta.annotation.Nonnull;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
@@ -28,6 +31,9 @@ public class InvocationExecutor {
     private final PluginServiceInvoker invoker;
     private final int timeoutMs;
     private final int acquireTimeoutMs;
+
+    @Setter
+    private RuntimeEventBus eventBus;  // 可选，用于发布调用事件
 
     public InvocationExecutor(String pluginId,
                               ExecutorService executor,
@@ -64,6 +70,39 @@ public class InvocationExecutor {
                 config.getBulkheadAcquireTimeoutMs());
     }
 
+    public Object execute(PluginInstance instance,
+                          ServiceRegistry.InvokableService service,
+                          Object[] args,
+                          String callerPluginId,
+                          String fqsid) throws Exception {
+
+        // 发布调用开始事件
+        publishEvent(new RuntimeEvent.InvocationStarted(pluginId, fqsid, callerPluginId));
+
+        long startTime = System.currentTimeMillis();
+        boolean success = false;
+
+        try {
+            Object result = doExecute(instance, service, args, callerPluginId, fqsid);
+            success = true;
+            return result;
+        } finally {
+            long duration = System.currentTimeMillis() - startTime;
+            publishEvent(new RuntimeEvent.InvocationCompleted(pluginId, fqsid, duration, success));
+        }
+    }
+
+    private void publishEvent(RuntimeEvent event) {
+        if (eventBus != null) {
+            eventBus.publish(event);
+        }
+    }
+
+    // 舱壁拒绝时
+    private void onBulkheadRejected(String fqsid, String callerPluginId) {
+        publishEvent(new RuntimeEvent.InvocationRejected(pluginId, fqsid, "Bulkhead full"));
+    }
+
     /**
      * 执行服务调用
      *
@@ -74,11 +113,11 @@ public class InvocationExecutor {
      * @param fqsid          服务ID（用于日志）
      * @return 调用结果
      */
-    public Object execute(PluginInstance instance,
-                          ServiceRegistry.InvokableService service,
-                          Object[] args,
-                          String callerPluginId,
-                          String fqsid) throws Exception {
+    public Object doExecute(PluginInstance instance,
+                            ServiceRegistry.InvokableService service,
+                            Object[] args,
+                            String callerPluginId,
+                            String fqsid) throws Exception {
 
         // 判断是否需要同步执行（事务场景）
         boolean isTx = transactionVerifier.isTransactional(

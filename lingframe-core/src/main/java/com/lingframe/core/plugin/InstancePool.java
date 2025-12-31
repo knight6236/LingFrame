@@ -1,5 +1,7 @@
 package com.lingframe.core.plugin;
 
+import com.lingframe.core.plugin.event.RuntimeEvent;
+import com.lingframe.core.plugin.event.RuntimeEventBus;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 
@@ -32,6 +34,19 @@ public class InstancePool {
     public InstancePool(String pluginId, int maxDyingInstances) {
         this.pluginId = pluginId;
         this.maxDyingInstances = maxDyingInstances;
+    }
+
+    /**
+     * 注册事件监听
+     */
+    public void registerEventHandlers(RuntimeEventBus eventBus) {
+        eventBus.subscribe(RuntimeEvent.RuntimeShuttingDown.class, this::onRuntimeShuttingDown);
+        log.debug("[{}] InstancePool event handlers registered", pluginId);
+    }
+
+    private void onRuntimeShuttingDown(RuntimeEvent.RuntimeShuttingDown event) {
+        log.debug("[{}] Runtime shutting down, initiating pool shutdown", pluginId);
+        shutdown();
     }
 
     // ==================== 查询方法 ====================
