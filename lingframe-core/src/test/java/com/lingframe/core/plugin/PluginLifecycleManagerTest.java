@@ -3,6 +3,7 @@ package com.lingframe.core.plugin;
 import com.lingframe.api.config.PluginDefinition;
 import com.lingframe.api.context.PluginContext;
 import com.lingframe.core.event.EventBus;
+import com.lingframe.core.plugin.event.RuntimeEventBus;
 import com.lingframe.core.spi.PluginContainer;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -26,14 +27,14 @@ public class PluginLifecycleManagerTest {
     private static final String PLUGIN_ID = "test-plugin";
 
     @Mock
-    private EventBus eventBus;
+    private EventBus externalEventBus;
 
     @Mock
     private PluginContext pluginContext;
 
     private ScheduledExecutorService scheduler;
     private InstancePool instancePool;
-    private ServiceRegistry serviceRegistry;
+    private RuntimeEventBus internalEventBus;
     private PluginRuntimeConfig config;
     private PluginLifecycleManager lifecycleManager;
 
@@ -47,12 +48,13 @@ public class PluginLifecycleManagerTest {
                 .build();
 
         instancePool = new InstancePool(PLUGIN_ID, config.getMaxHistorySnapshots());
-        serviceRegistry = new ServiceRegistry(PLUGIN_ID);
+        internalEventBus = new RuntimeEventBus(PLUGIN_ID);
+
         lifecycleManager = new PluginLifecycleManager(
                 PLUGIN_ID,
                 instancePool,
-                serviceRegistry,
-                eventBus,
+                internalEventBus,      // 🔥 内部事件总线
+                externalEventBus,      // 🔥 外部事件总线
                 scheduler,
                 config
         );
@@ -121,7 +123,7 @@ public class PluginLifecycleManagerTest {
 
             assertTrue(instance.isReady());
             assertEquals(instance, instancePool.getDefault());
-            verify(eventBus, atLeastOnce()).publish(any());
+            verify(externalEventBus, atLeastOnce()).publish(any());
         }
 
         @Test
@@ -185,8 +187,7 @@ public class PluginLifecycleManagerTest {
             for (int i = 0; i < config.getMaxHistorySnapshots(); i++) {
                 PluginInstance instance = createMockInstance("old-" + i);
                 instancePool.addInstance(instance, false);
-                // 模拟有活跃请求，不会被清理
-                instance.tryEnter();
+                instance.tryEnter(); // 模拟有活跃请求
                 instancePool.moveToDying(instance);
             }
 
@@ -232,23 +233,6 @@ public class PluginLifecycleManagerTest {
             assertNull(instancePool.getDefault());
             assertTrue(instance.isDying());
         }
-
-        @Test
-        @DisplayName("关闭应清空服务注册表")
-        void shutdownShouldClearServiceRegistry() throws Exception {
-            // 注册一个服务
-            Object bean = new Object() {
-                public String hello() {
-                    return "hello";
-                }
-            };
-            serviceRegistry.registerService("test:hello", bean,
-                    bean.getClass().getMethod("hello"));
-
-            lifecycleManager.shutdown();
-
-            assertEquals(0, serviceRegistry.getServiceCount());
-        }
     }
 
     // ==================== 清理测试 ====================
@@ -263,11 +247,9 @@ public class PluginLifecycleManagerTest {
             PluginInstance instance = createMockInstance("1.0.0");
             lifecycleManager.addInstance(instance, pluginContext, true);
 
-            // 移到死亡队列
             instancePool.moveToDying(instance);
             assertTrue(instance.isIdle());
 
-            // 手动触发清理
             int cleaned = lifecycleManager.cleanupIdleInstances();
 
             assertEquals(1, cleaned);
@@ -280,8 +262,7 @@ public class PluginLifecycleManagerTest {
             PluginInstance instance = createMockInstance("1.0.0");
             lifecycleManager.addInstance(instance, pluginContext, true);
 
-            // 模拟活跃请求
-            instance.tryEnter();
+            instance.tryEnter(); // 模拟活跃请求
             instancePool.moveToDying(instance);
 
             int cleaned = lifecycleManager.cleanupIdleInstances();
@@ -289,8 +270,7 @@ public class PluginLifecycleManagerTest {
             assertEquals(0, cleaned);
             assertFalse(instance.isDestroyed());
 
-            // 清理
-            instance.exit();
+            instance.exit(); // 清理
         }
 
         @Test
@@ -300,7 +280,6 @@ public class PluginLifecycleManagerTest {
             lifecycleManager.addInstance(instance, pluginContext, true);
             instancePool.moveToDying(instance);
 
-            // 等待定时清理（间隔 1 秒）
             await()
                     .atMost(3, TimeUnit.SECONDS)
                     .until(instance::isDestroyed);
@@ -311,7 +290,6 @@ public class PluginLifecycleManagerTest {
         @Test
         @DisplayName("强制清理应销毁所有实例")
         void forceCleanupShouldDestroyAll() {
-            // 添加一些忙碌的实例
             for (int i = 0; i < 3; i++) {
                 PluginInstance instance = createMockInstance("1.0." + i);
                 lifecycleManager.addInstance(instance, pluginContext, false);
@@ -327,11 +305,47 @@ public class PluginLifecycleManagerTest {
         }
     }
 
-    // ==================== 事件发布测试 ====================
+    // ==================== 内部事件测试 ====================
 
     @Nested
-    @DisplayName("事件发布")
-    class EventPublishingTests {
+    @DisplayName("内部事件")
+    class InternalEventTests {
+
+        @Test
+        @DisplayName("添加实例应发布 Upgrading 事件")
+        void addInstanceShouldPublishUpgradingEvent() {
+            AtomicInteger eventCount = new AtomicInteger(0);
+            internalEventBus.subscribe(
+                    com.lingframe.core.plugin.event.RuntimeEvent.InstanceUpgrading.class,
+                    e -> eventCount.incrementAndGet()
+            );
+
+            PluginInstance instance = createMockInstance("1.0.0");
+            lifecycleManager.addInstance(instance, pluginContext, true);
+
+            assertEquals(1, eventCount.get());
+        }
+
+        @Test
+        @DisplayName("关闭应发布 ShuttingDown 事件")
+        void shutdownShouldPublishShuttingDownEvent() {
+            AtomicInteger eventCount = new AtomicInteger(0);
+            internalEventBus.subscribe(
+                    com.lingframe.core.plugin.event.RuntimeEvent.RuntimeShuttingDown.class,
+                    e -> eventCount.incrementAndGet()
+            );
+
+            lifecycleManager.shutdown();
+
+            assertEquals(1, eventCount.get());
+        }
+    }
+
+    // ==================== 外部事件测试 ====================
+
+    @Nested
+    @DisplayName("外部事件")
+    class ExternalEventTests {
 
         @Test
         @DisplayName("添加实例应发布启动事件")
@@ -340,8 +354,7 @@ public class PluginLifecycleManagerTest {
 
             lifecycleManager.addInstance(instance, pluginContext, true);
 
-            // 验证发布了 Starting 和 Started 事件
-            verify(eventBus, atLeast(2)).publish(any());
+            verify(externalEventBus, atLeast(2)).publish(any());
         }
 
         @Test
@@ -350,13 +363,12 @@ public class PluginLifecycleManagerTest {
             PluginInstance instance = createMockInstance("1.0.0");
             lifecycleManager.addInstance(instance, pluginContext, true);
 
-            reset(eventBus); // 重置，只验证停止事件
+            reset(externalEventBus);
 
             instancePool.moveToDying(instance);
             lifecycleManager.cleanupIdleInstances();
 
-            // 验证发布了 Stopping 和 Stopped 事件
-            verify(eventBus, atLeast(2)).publish(any());
+            verify(externalEventBus, atLeast(2)).publish(any());
         }
     }
 
@@ -423,7 +435,7 @@ public class PluginLifecycleManagerTest {
                         lifecycleManager.addInstance(instance, pluginContext, index == 0);
                         successCount.incrementAndGet();
                     } catch (Exception e) {
-                        // 部分失败是可接受的（如背压）
+                        // 部分失败是可接受的
                     } finally {
                         doneLatch.countDown();
                     }
@@ -441,7 +453,6 @@ public class PluginLifecycleManagerTest {
         @Test
         @DisplayName("并发清理应安全")
         void concurrentCleanupShouldBeSafe() throws InterruptedException {
-            // 添加一些实例
             for (int i = 0; i < 5; i++) {
                 PluginInstance instance = createMockInstance("1.0." + i);
                 lifecycleManager.addInstance(instance, pluginContext, i == 0);

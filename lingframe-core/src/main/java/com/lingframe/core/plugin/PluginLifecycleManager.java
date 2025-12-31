@@ -4,6 +4,8 @@ import com.lingframe.api.context.PluginContext;
 import com.lingframe.api.event.LingEvent;
 import com.lingframe.api.event.lifecycle.*;
 import com.lingframe.core.event.EventBus;
+import com.lingframe.core.plugin.event.RuntimeEvent;
+import com.lingframe.core.plugin.event.RuntimeEventBus;
 import jakarta.annotation.Nonnull;
 import lombok.extern.slf4j.Slf4j;
 
@@ -23,8 +25,8 @@ public class PluginLifecycleManager {
     private final String pluginId;
     private final PluginRuntimeConfig config;
     private final InstancePool instancePool;
-    private final ServiceRegistry serviceRegistry;
-    private final EventBus eventBus;
+    private final RuntimeEventBus internalEventBus;  // 内部事件总线
+    private final EventBus externalEventBus;         // 外部事件总线
     private final ScheduledExecutorService scheduler;
 
     private final ReentrantLock stateLock = new ReentrantLock();
@@ -33,14 +35,14 @@ public class PluginLifecycleManager {
 
     public PluginLifecycleManager(String pluginId,
                                   InstancePool instancePool,
-                                  ServiceRegistry serviceRegistry,
-                                  EventBus eventBus,
+                                  RuntimeEventBus internalEventBus,
+                                  EventBus externalEventBus,
                                   ScheduledExecutorService scheduler,
                                   PluginRuntimeConfig config) {
         this.pluginId = pluginId;
         this.instancePool = instancePool;
-        this.serviceRegistry = serviceRegistry;
-        this.eventBus = eventBus;
+        this.internalEventBus = internalEventBus;
+        this.externalEventBus = externalEventBus;
         this.scheduler = scheduler;
         this.config = config;
 
@@ -64,11 +66,11 @@ public class PluginLifecycleManager {
         String version = newInstance.getVersion();
         log.info("[{}] Starting new version: {}", pluginId, version);
 
-        // Pre-Start 事件
-        publishEvent(new PluginStartingEvent(pluginId, version));
+        // 发布外部事件
+        publishExternal(new PluginStartingEvent(pluginId, version));
 
-        // 清理旧缓存
-        serviceRegistry.clear();
+        // 🔥 发布内部事件（通知其他组件准备升级）
+        publishInternal(new RuntimeEvent.InstanceUpgrading(pluginId, version));
 
         // 启动容器
         try {
@@ -99,15 +101,20 @@ public class PluginLifecycleManager {
 
             // 添加到池并处理旧实例
             PluginInstance old = instancePool.addInstance(newInstance, isDefault);
+
+            // 🔥 发布实例就绪事件
+            publishInternal(new RuntimeEvent.InstanceReady(pluginId, version, newInstance));
+
             if (old != null) {
                 instancePool.moveToDying(old);
+                // 🔥 发布实例进入死亡状态事件
+                publishInternal(new RuntimeEvent.InstanceDying(pluginId, old.getVersion(), old));
             }
         } finally {
             stateLock.unlock();
         }
 
-        // Post-Start 事件
-        publishEvent(new PluginStartedEvent(pluginId, version));
+        publishExternal(new PluginStartedEvent(pluginId, version));
         log.info("[{}] Version {} started", pluginId, version);
     }
 
@@ -121,17 +128,20 @@ public class PluginLifecycleManager {
 
         stateLock.lock();
         try {
-            // 关闭实例池
-            instancePool.shutdown();
+            // 🔥 发布关闭事件（其他组件自己清理）
+            publishInternal(new RuntimeEvent.RuntimeShuttingDown(pluginId));
 
-            // 清理缓存
-            serviceRegistry.clear();
+            // 🔥 显式关闭实例池
+            instancePool.shutdown();
 
             // 立即清理一次
             cleanupIdleInstances();
 
             // 调度强制清理
             scheduleForceCleanup();
+
+            // 🔥 发布已关闭事件
+            publishInternal(new RuntimeEvent.RuntimeShutdown(pluginId));
 
             log.info("[{}] Lifecycle manager shutdown", pluginId);
         } finally {
@@ -223,7 +233,7 @@ public class PluginLifecycleManager {
 
         // Pre-Stop 事件
         try {
-            publishEvent(new PluginStoppingEvent(pluginId, version));
+            publishExternal(new PluginStoppingEvent(pluginId, version));
         } catch (Exception e) {
             log.error("[{}] Error in Pre-Stop hook", pluginId, e);
         }
@@ -235,8 +245,10 @@ public class PluginLifecycleManager {
             log.error("[{}] Error destroying instance: {}", pluginId, version, e);
         }
 
-        // Post-Stop 事件
-        publishEvent(new PluginStoppedEvent(pluginId, version));
+        // 🔥 发布内部销毁事件
+        publishInternal(new RuntimeEvent.InstanceDestroyed(pluginId, version));
+
+        publishExternal(new PluginStoppedEvent(pluginId, version));
     }
 
     private void safeDestroy(PluginInstance instance) {
@@ -246,9 +258,15 @@ public class PluginLifecycleManager {
         }
     }
 
-    private <E extends LingEvent> void publishEvent(E event) {
-        if (eventBus != null) {
-            eventBus.publish(event);
+    private void publishInternal(RuntimeEvent event) {
+        if (internalEventBus != null) {
+            internalEventBus.publish(event);
+        }
+    }
+
+    private <E extends LingEvent> void publishExternal(E event) {
+        if (externalEventBus != null) {
+            externalEventBus.publish(event);
         }
     }
 

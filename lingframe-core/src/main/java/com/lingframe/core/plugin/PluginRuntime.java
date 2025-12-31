@@ -4,6 +4,8 @@ import com.lingframe.api.context.PluginContext;
 import com.lingframe.core.event.EventBus;
 import com.lingframe.core.kernel.GovernanceKernel;
 import com.lingframe.core.kernel.InvocationContext;
+import com.lingframe.core.plugin.event.RuntimeEvent;
+import com.lingframe.core.plugin.event.RuntimeEventBus;
 import com.lingframe.core.proxy.SmartServiceProxy;
 import com.lingframe.core.spi.PluginServiceInvoker;
 import com.lingframe.core.spi.ThreadLocalPropagator;
@@ -39,6 +41,9 @@ public class PluginRuntime {
     @Getter
     private final PluginRuntimeConfig config;
 
+    // 内部事件总线
+    private final RuntimeEventBus internalEventBus;
+
     // ===== 核心组件 =====
     @Getter
     private final InstancePool instancePool;
@@ -61,7 +66,7 @@ public class PluginRuntime {
                          ScheduledExecutorService scheduler,
                          ExecutorService executor,
                          GovernanceKernel governanceKernel,
-                         EventBus eventBus,
+                         EventBus externalEventBus,
                          TrafficRouter router,
                          PluginServiceInvoker invoker,
                          TransactionVerifier transactionVerifier,
@@ -70,6 +75,9 @@ public class PluginRuntime {
         this.config = config != null ? config : PluginRuntimeConfig.defaults();
         this.router = router;
         this.governanceKernel = governanceKernel;
+
+        // 🔥 创建内部事件总线
+        this.internalEventBus = new RuntimeEventBus(pluginId);
 
         // 创建组件
         this.instancePool = new InstancePool(pluginId, this.config.getMaxHistorySnapshots());
@@ -85,13 +93,52 @@ public class PluginRuntime {
         this.lifecycleManager = new PluginLifecycleManager(
                 pluginId,
                 instancePool,
-                serviceRegistry,
-                eventBus,
+                internalEventBus,      // 内部事件
+                externalEventBus,      // 外部事件
                 scheduler,
                 this.config
         );
 
+        // 🔥 注册组件的事件处理器
+        registerEventHandlers();
+
         log.info("[{}] PluginRuntime initialized", pluginId);
+    }
+
+    /**
+     * 注册各组件的事件处理器
+     */
+    private void registerEventHandlers() {
+        instancePool.registerEventHandlers(internalEventBus);
+        serviceRegistry.registerEventHandlers(internalEventBus);
+        invocationExecutor.setEventBus(internalEventBus);
+
+        // 🔥 可以添加更多监听器，如指标收集
+        registerMetricsHandlers();
+
+        log.debug("[{}] Event handlers registered, total subscriptions: {}",
+                pluginId, internalEventBus.getSubscriptionCount());
+    }
+
+    /**
+     * 注册指标收集处理器（示例）
+     */
+    private void registerMetricsHandlers() {
+        // 调用指标
+        internalEventBus.subscribe(RuntimeEvent.InvocationCompleted.class, event -> {
+            // TODO: 上报到监控系统
+            // metricsCollector.recordInvocation(event.fqsid(), event.durationMs(), event.success());
+            log.trace("[{}] Invocation completed: {} in {}ms, success={}",
+                    pluginId, event.fqsid(), event.durationMs(), event.success());
+        });
+
+        // 拒绝指标
+        internalEventBus.subscribe(RuntimeEvent.InvocationRejected.class, event -> {
+            // TODO: 上报到监控系统
+            // metricsCollector.recordRejection(event.fqsid(), event.reason());
+            log.warn("[{}] Invocation rejected: {} reason={}",
+                    pluginId, event.fqsid(), event.reason());
+        });
     }
 
     // ==================== 生命周期（委托）====================
@@ -109,6 +156,9 @@ public class PluginRuntime {
     public void shutdown() {
         log.info("[{}] Shutting down PluginRuntime", pluginId);
         lifecycleManager.shutdown();
+
+        // 🔥 清理事件总线
+        internalEventBus.clear();
     }
 
     // ==================== 协调逻辑 ====================

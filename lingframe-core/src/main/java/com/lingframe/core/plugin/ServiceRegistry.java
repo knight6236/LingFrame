@@ -1,5 +1,7 @@
 package com.lingframe.core.plugin;
 
+import com.lingframe.core.plugin.event.RuntimeEvent;
+import com.lingframe.core.plugin.event.RuntimeEventBus;
 import jakarta.annotation.Nonnull;
 import lombok.extern.slf4j.Slf4j;
 
@@ -31,6 +33,29 @@ public class ServiceRegistry {
 
     public ServiceRegistry(String pluginId) {
         this.pluginId = pluginId;
+    }
+
+    /**
+     * 注册事件监听（由 PluginRuntime 调用）
+     */
+    public void registerEventHandlers(RuntimeEventBus eventBus) {
+        // 升级时清理代理缓存（服务实现可能变了）
+        eventBus.subscribe(RuntimeEvent.InstanceUpgrading.class, this::onInstanceUpgrading);
+
+        // 关闭时清理所有缓存
+        eventBus.subscribe(RuntimeEvent.RuntimeShuttingDown.class, this::onRuntimeShuttingDown);
+
+        log.debug("[{}] ServiceRegistry event handlers registered", pluginId);
+    }
+
+    private void onInstanceUpgrading(RuntimeEvent.InstanceUpgrading event) {
+        log.debug("[{}] Instance upgrading, clearing proxy cache", pluginId);
+        clearProxyCache();
+    }
+
+    private void onRuntimeShuttingDown(RuntimeEvent.RuntimeShuttingDown event) {
+        log.debug("[{}] Runtime shutting down, clearing all caches", pluginId);
+        clear();
     }
 
     // ==================== 服务注册 ====================
