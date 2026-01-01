@@ -13,7 +13,9 @@ public class DefaultPluginServiceInvoker implements PluginServiceInvoker {
     @Override
     public Object invoke(PluginInstance instance, Object bean, Method method, Object[] args) throws Exception {
         // 引用计数保护
-        instance.enter();
+        if (!instance.tryEnter()) {
+            throw new IllegalStateException("Plugin instance is not ready or already destroyed");
+        }
         ClassLoader originalClassLoader = Thread.currentThread().getContextClassLoader();
 
         try {

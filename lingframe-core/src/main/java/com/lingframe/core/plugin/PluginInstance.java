@@ -101,14 +101,15 @@ public class PluginInstance {
      */
     public boolean isReady() {
         return ready
-               && !dying
-               && !destroyed
-               && container != null
-               && container.isActive();
+                && !dying
+                && !destroyed
+                && container != null
+                && container.isActive();
     }
 
     /**
      * 🔥 尝试进入（原子操作，检查状态）
+     *
      * @return true 如果成功进入，false 如果实例不可用
      */
     public boolean tryEnter() {
@@ -127,14 +128,6 @@ public class PluginInstance {
         }
 
         return true;
-    }
-
-    /**
-     * 请求进入：计数器 +1
-     */
-    @Deprecated
-    public void enter() {
-        activeRequests.incrementAndGet();
     }
 
     /**

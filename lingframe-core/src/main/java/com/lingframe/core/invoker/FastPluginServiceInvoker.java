@@ -1,5 +1,3 @@
-// 新增文件：lingframe-core/src/main/java/com/lingframe/core/invoker/FastPluginServiceInvoker.java
-
 package com.lingframe.core.invoker;
 
 import com.lingframe.core.plugin.PluginInstance;
@@ -24,7 +22,9 @@ public class FastPluginServiceInvoker implements PluginServiceInvoker {
      * 🚀 新增的高性能入口
      */
     public Object invokeFast(PluginInstance instance, MethodHandle methodHandle, Object[] args) throws Throwable {
-        instance.enter();
+        if (!instance.tryEnter()) {
+            throw new IllegalStateException("Plugin instance is not ready or already destroyed");
+        }
         ClassLoader originalClassLoader = Thread.currentThread().getContextClassLoader();
 
         try {

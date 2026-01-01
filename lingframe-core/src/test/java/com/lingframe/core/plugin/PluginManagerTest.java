@@ -63,7 +63,7 @@ public class PluginManagerTest {
     @BeforeEach
     void setUp() {
         // 设置 mock 行为
-        when(pluginLoaderFactory.create(any(), any()))
+        when(pluginLoaderFactory.create(anyString(), any(), any()))
                 .thenReturn(Thread.currentThread().getContextClassLoader());
 
         pluginManager = new PluginManager(
@@ -342,7 +342,7 @@ public class PluginManagerTest {
                 pluginManager.installDev(pluginId, "1.0.0", pluginDir);
             }
 
-            var allIds = pluginManager.getAllPluginIds();
+            var allIds = pluginManager.getInstalledPlugins();
             assertEquals(3, allIds.size());
         }
     }

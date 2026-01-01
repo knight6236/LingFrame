@@ -45,7 +45,7 @@ class SmartServiceProxyTest {
         proxy.invoke(null, runMethod, new Object[0]);
 
         // 5. 验证生命周期闭环
-        verify(mockInst, times(1)).enter(); // 必须调用进入计数
+        verify(mockInst, times(1)).tryEnter(); // 必须调用进入计数
         verify(mockInst, times(1)).exit();  // 必须调用退出计数，否则内存泄漏
     }
 }

@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.util.*;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * 插件类加载器
@@ -13,14 +14,16 @@ import java.util.*;
  * 1. Child-First (优先加载插件内部类)
  * 2. 强制委派白名单 (Core API 必须走父加载器)
  * 3. 资源加载 Child-First (防止读取到宿主的配置)
+ * 4. 安全关闭 (防止关闭后继续使用)
  */
 @Slf4j
 public class PluginClassLoader extends URLClassLoader {
 
     // 必须强制走父加载器的包（契约包 + JDK）
     private static final List<String> FORCE_PARENT_PACKAGES = Arrays.asList(
-            "java.", "javax.", "jdk.", "sun.", "com.sun.", "org.w3c.", "org.xml.",
+            "java.", "javax.", "jakarta.", "jdk.", "sun.", "com.sun.", "org.w3c.", "org.xml.",
             "com.lingframe.api.", // API 契约必须共享
+            "lombok.", // Lombok 相关类
             "org.slf4j.",         // 日志门面通常共享
             "org.apache.logging.log4j.", // Log4j2
             "ch.qos.logback.",    // Logback
@@ -30,55 +33,91 @@ public class PluginClassLoader extends URLClassLoader {
     );
 
     // 可配置的额外委派包列表
-    private static volatile List<String> additionalParentPackages = new ArrayList<>();
+    private static final List<String> additionalParentPackages = new CopyOnWriteArrayList<>();
+
+    // ==================== 实例状态 ====================
+
+    private final String pluginId;
+    private volatile boolean closed = false;
 
     public PluginClassLoader(URL[] urls, ClassLoader parent) {
+        this("unknown", urls, parent);
+    }
+
+    public PluginClassLoader(String pluginId, URL[] urls, ClassLoader parent) {
         super(urls, parent);
+        this.pluginId = pluginId;
+        log.debug("[{}] ClassLoader created with {} URLs", pluginId, urls.length);
     }
 
     /**
-     * 添加额外的强制委派包
+     * 添加额外的强制委派包（全局生效）
+     *
      * @param packages 包名前缀列表
      */
-    public static void addAdditionalParentPackages(List<String> packages) {
-        additionalParentPackages.addAll(packages);
+    public static void addParentDelegatePackages(Collection<String> packages) {
+        if (packages != null) {
+            additionalParentPackages.addAll(packages);
+            log.info("Added parent delegate packages: {}", packages);
+        }
+    }
+
+    /**
+     * 移除额外的委派包
+     */
+    public static void removeParentDelegatePackages(Collection<String> packages) {
+        if (packages != null) {
+            additionalParentPackages.removeAll(packages);
+        }
     }
 
     @Override
     public Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
+        // ✅ 关闭状态检查
+        if (closed) {
+            throw new IllegalStateException(
+                    String.format("ClassLoader for plugin [%s] has been closed, cannot load class: %s",
+                            pluginId, name));
+        }
+
         synchronized (getClassLoadingLock(name)) {
-            // 1. 检查缓存
+            // 检查缓存
             Class<?> c = findLoadedClass(name);
             if (c != null) return c;
 
-            // 2. 白名单强制委派给父加载器 (防止 ClassCastException)
+            // 白名单强制委派给父加载器 (防止 ClassCastException)
             if (shouldDelegateToParent(name)) {
                 try {
                     c = getParent().loadClass(name);
+                    if (c != null) {
+                        if (resolve) resolveClass(c);
+                        return c;
+                    }
                 } catch (ClassNotFoundException ignored) {
+                    // 父加载器没找到，继续尝试自己加载
                 }
             }
 
-            // 3. Child-First: 优先自己加载
-            if (c == null) {
-                try {
-                    c = findClass(name);
-                } catch (ClassNotFoundException ignored) {
-                }
+            // Child-First: 优先自己加载
+            try {
+                c = findClass(name);
+                if (resolve) resolveClass(c);
+                return c;
+            } catch (ClassNotFoundException ignored) {
+                // 自己没有，继续兜底
             }
 
-            // 4. 兜底: 自己没有，再找父亲 (加载公共库如 StringUtils)
-            if (c == null) {
-                c = super.loadClass(name, resolve);
-            }
-
-            if (resolve) resolveClass(c);
-            return c;
+            // 兜底: 自己没有，再找父亲 (加载公共库如 StringUtils)
+            return super.loadClass(name, resolve);
         }
     }
 
     @Override
     public URL getResource(String name) {
+        if (closed) {
+            log.warn("[{}] Attempting to get resource from closed ClassLoader: {}", pluginId, name);
+            return null;
+        }
         // 资源加载也必须 Child-First，否则会读到宿主的 application.properties
         URL url = findResource(name);
         if (url != null) return url;
@@ -87,25 +126,88 @@ public class PluginClassLoader extends URLClassLoader {
 
     @Override
     public Enumeration<URL> getResources(String name) throws IOException {
-        // 组合资源：自己的 + 父加载器的
-        Enumeration<URL> localUrls = findResources(name);
-        Enumeration<URL> parentUrls = null;
-        if (getParent() != null) {
-            parentUrls = getParent().getResources(name);
+        if (closed) {
+            return Collections.emptyEnumeration();
         }
-
+        // 组合资源：自己的 + 父加载器的（自己的优先）
         List<URL> urls = new ArrayList<>();
+
+        // 先添加自己的资源
+        Enumeration<URL> localUrls = findResources(name);
         while (localUrls.hasMoreElements()) urls.add(localUrls.nextElement());
-        if (parentUrls != null) {
-            while (parentUrls.hasMoreElements()) urls.add(parentUrls.nextElement());
+        // 再添加父加载器的资源
+        ClassLoader parent = getParent();
+        if (parent != null) {
+            Enumeration<URL> parentUrls = parent.getResources(name);
+            while (parentUrls.hasMoreElements()) {
+                URL url = parentUrls.nextElement();
+                // 去重
+                if (!urls.contains(url)) {
+                    urls.add(url);
+                }
+            }
         }
         return Collections.enumeration(urls);
     }
 
-    private boolean shouldDelegateToParent(String name) {
-        for (String pkg : FORCE_PARENT_PACKAGES) {
-            if (name.startsWith(pkg)) return true;
+    @Override
+    public void close() throws IOException {
+        if (closed) {
+            log.debug("[{}] ClassLoader already closed", pluginId);
+            return;
         }
+
+        closed = true;
+        log.info("[{}] Closing ClassLoader...", pluginId);
+
+        try {
+            // 调用父类的 close() 释放 JAR 文件句柄
+            super.close();
+            log.info("[{}] ClassLoader closed successfully", pluginId);
+
+            // Windows 特殊处理：提示 GC 尽快回收
+            System.gc();
+        } catch (IOException e) {
+            log.error("[{}] Error closing ClassLoader", pluginId, e);
+            throw e;
+        }
+    }
+
+    /**
+     * 检查 ClassLoader 是否已关闭
+     */
+    public boolean isClosed() {
+        return closed;
+    }
+
+    /**
+     * 获取插件ID
+     */
+    public String getPluginId() {
+        return pluginId;
+    }
+
+    private boolean shouldDelegateToParent(String name) {
+        // ✅ 检查内置白名单
+        for (String pkg : FORCE_PARENT_PACKAGES) {
+            if (name.startsWith(pkg)) {
+                return true;
+            }
+        }
+
+        // ✅ 检查动态添加的白名单
+        for (String pkg : additionalParentPackages) {
+            if (name.startsWith(pkg)) {
+                return true;
+            }
+        }
+
         return false;
+    }
+
+    @Override
+    public String toString() {
+        return String.format("PluginClassLoader[pluginId=%s, closed=%s, urls=%d]",
+                pluginId, closed, getURLs().length);
     }
 }
