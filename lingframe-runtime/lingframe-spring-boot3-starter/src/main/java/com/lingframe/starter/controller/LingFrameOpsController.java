@@ -31,7 +31,7 @@ public class LingFrameOpsController {
      */
     @GetMapping("/list")
     public List<Map<String, Object>> listPlugins() {
-        return pluginManager.getAllPluginIds().stream().map(id -> {
+        return pluginManager.getInstalledPlugins().stream().map(id -> {
             Map<String, Object> info = new HashMap<>();
             info.put("pluginId", id);
             info.put("version", pluginManager.getPluginVersion(id));

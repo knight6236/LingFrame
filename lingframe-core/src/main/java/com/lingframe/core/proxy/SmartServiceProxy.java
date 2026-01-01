@@ -86,7 +86,9 @@ public class SmartServiceProxy implements InvocationHandler {
                 PluginInstance instance = targetRuntime.getInstancePool().getDefault();
                 if (instance == null) throw new IllegalStateException("Service unavailable");
 
-                instance.enter();
+                if (!instance.tryEnter()) {
+                    throw new IllegalStateException("Plugin instance is not ready or already destroyed");
+                }
                 // 这样如果 B 调用 C，C 看到的 caller 就是 B，而不是 A
                 PluginContextHolder.set(targetRuntime.getPluginId());
                 Thread t = Thread.currentThread();

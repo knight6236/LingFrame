@@ -335,7 +335,7 @@ public class SpringPluginContainer implements PluginContainer {
     }
 
     @Override
-    public Object getBean(String beanName) { // <--- 新增此方法实现
+    public Object getBean(String beanName) {
         if (!isActive()) return null;
         try {
             return context.getBean(beanName); // 调用 Spring 自身的 getBean(String)

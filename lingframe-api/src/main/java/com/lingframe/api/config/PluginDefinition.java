@@ -28,7 +28,7 @@ public class PluginDefinition implements Serializable {
     // 依赖列表
     private List<PluginDependency> dependencies = new ArrayList<>();
 
-    // === 治理配置 (原 GovernanceConfig) ===
+    // === 治理配置 ===
     private GovernancePolicy governance = new GovernancePolicy();
 
     // === 扩展配置 (KV 键值对，用于业务参数) ===
