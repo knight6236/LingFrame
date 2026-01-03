@@ -15,7 +15,8 @@
 
 ## 📖 愿景
 
-**LingFrame** 是一个基于 JVM 的新一代微内核插件化框架。
+**LingFrame** 是一个基于 JVM 的运行时治理框架。
+
 我们致力于为现代 Java 应用构建一个**可控、可扩展、可演进**的运行时体系。
 
 > **一句话愿景**：让 JVM 应用具备如同操作系统般的插件模型和可控能力。
@@ -24,15 +25,16 @@
 
 ## ✅ 已实现的核心能力
 
-| 能力                  | 说明                                      | 核心类                        |
-| --------------------- | ----------------------------------------- | ----------------------------- |
-| **插件生命周期**      | 安装、卸载、热重载，支持蓝绿部署          | `PluginManager`, `PluginSlot` |
-| **类隔离**            | Child-First 类加载器 + 白名单委派         | `PluginClassLoader`           |
-| **Spring 上下文隔离** | 每个插件独立的父子 ApplicationContext     | `SpringPluginContainer`       |
-| **服务扩展**          | `@LingService` 注解实现 FQSID 路由        | `SmartServiceProxy`           |
-| **权限治理**          | 智能推导 + `@RequiresPermission` 显式声明 | `GovernanceStrategy`          |
-| **审计追踪**          | `@Auditable` 注解 + 异步审计日志          | `AuditManager`                |
-| **开发模式**          | 文件监听 + 防抖热重载                     | `HotSwapWatcher`              |
+| 能力                  | 说明                                      | 核心类                                |
+| --------------------- | ----------------------------------------- | ------------------------------------- |
+| **插件生命周期**      | 安装、卸载、热重载，支持蓝绿部署          | `PluginManager`, `PluginRuntime`, `InstancePool` |
+| **类隔离**            | Child-First 类加载器 + 白名单委派         | `PluginClassLoader`                   |
+| **Spring 上下文隔离** | 每个插件独立的父子 ApplicationContext     | `SpringPluginContainer`               |
+| **服务扩展**          | `@LingService` 注解实现 FQSID 路由        | `ServiceRegistry`, `SmartServiceProxy` |
+| **服务注入**          | `@LingReference` 注解自动注入插件服务     | `LingReferenceInjector`, `GlobalServiceRoutingProxy` |
+| **权限治理**          | 智能推导 + `@RequiresPermission` 显式声明 | `GovernanceKernel`, `GovernanceStrategy` |
+| **审计追踪**          | `@Auditable` 注解 + 异步审计日志          | `AuditManager`                        |
+| **开发模式**          | 文件监听 + 防抖热重载                     | `HotSwapWatcher`                      |
 
 ---
 
@@ -103,15 +105,39 @@ cd lingframe
 mvn clean install -DskipTests
 
 # 运行示例宿主应用
-cd lingframe-samples/lingframe-sample-host-app
+cd lingframe-examples/lingframe-example-host-app
 mvn spring-boot:run
+```
+
+### 宿主应用配置
+
+在 `application.yaml` 中配置 LingFrame：
+
+```yaml
+lingframe:
+  enabled: true
+  dev-mode: true                    # 开发模式，权限不足时仅警告
+  plugin-home: "plugins"            # 插件 JAR 包目录
+  plugin-roots:                     # 插件源码目录（开发模式）
+    - "../my-plugin/target/classes"
+  auto-scan: true
+  
+  audit:
+    enabled: true
+    log-console: true
+    queue-size: 1000
+  
+  runtime:
+    default-timeout: 3s
+    bulkhead-max-concurrent: 10
 ```
 
 ### 创建插件
 
 1. 创建 Maven 模块，依赖 `lingframe-api`
 2. 实现 `LingPlugin` 接口
-3. 使用 `@LingService` 暴露服务
+3. 创建 `plugin.yml` 元数据
+4. 使用 `@LingService` 暴露服务
 
 ```java
 // 插件入口
@@ -125,22 +151,56 @@ public class MyPlugin implements LingPlugin {
 
 // 暴露服务
 @Component
-public class UserService {
+public class UserServiceImpl implements UserService {
+    
     @LingService(id = "query_user", desc = "查询用户")
-    public User queryUser(String userId) {
+    @Override
+    public Optional<User> queryUser(String userId) {
         return userRepository.findById(userId);
     }
 }
 ```
 
-### 调用其他插件服务
+插件元数据 `plugin.yml`：
+
+```yaml
+id: my-plugin
+version: 1.0.0
+provider: "My Company"
+description: "我的插件"
+mainClass: "com.example.MyPlugin"
+
+governance:
+  permissions:
+    - methodPattern: "storage:sql"
+      permissionId: "READ"
+```
+
+### 调用其他插件服务（三种方式）
 
 ```java
-// 通过 FQSID 调用
-Optional<User> user = context.invoke("user-plugin:query_user", userId);
+// 方式一：@LingReference 注入（强烈推荐）
+@Component
+public class OrderService {
+    
+    @LingReference
+    private UserService userService;  // 自动注入
+    
+    @LingReference(pluginId = "user-plugin", timeout = 5000)
+    private UserService userServiceV2;  // 指定插件和超时
+    
+    public Order createOrder(String userId) {
+        User user = userService.queryUser(userId)
+                .orElseThrow(() -> new RuntimeException("用户不存在"));
+        return new Order(user);
+    }
+}
 
-// 通过接口类型获取
+// 方式二：PluginContext.getService()
 Optional<UserService> service = context.getService(UserService.class);
+
+// 方式三：FQSID 协议调用
+Optional<User> user = context.invoke("user-plugin:query_user", userId);
 ```
 
 ---
@@ -149,18 +209,19 @@ Optional<UserService> service = context.getService(UserService.class);
 
 ```
 lingframe/
-├── lingframe-api/          # 核心契约层（接口、注解）
-├── lingframe-core/         # 框架实现（插件管理、权限、代理）
-├── lingframe-bom/          # 依赖版本清单
-├── lingframe-dependencies/ # 版本管理父 POM
-├── lingframe-runtime/
-│   └── lingframe-spring-boot3-starter/  # Spring Boot 3 集成
-├── lingframe-plugins-infra/             # 基础设施插件（三层架构中间层）
-│   ├── lingframe-plugin-storage/  # 存储插件：SQL 级权限控制
-│   └── lingframe-plugin-cache/    # 缓存插件（待实现）
-└── lingframe-samples/
-    ├── lingframe-sample-host-app/    # 宿主应用示例
-    └── lingframe-sample-plugin-user/ # 示例业务插件
+├── lingframe-api/              # 契约层（接口、注解、异常）
+├── lingframe-core/             # 仲裁内核（插件管理、治理、安全）
+├── lingframe-runtime/          # 运行时集成
+│   └── lingframe-spring-boot3-starter/  # Spring Boot 3.x 集成
+├── lingframe-plugins-infra/    # 基础设施插件
+│   ├── lingframe-plugin-storage/  # 数据库访问，SQL 级权限控制
+│   └── lingframe-plugin-cache/    # 缓存访问
+├── lingframe-examples/         # 示例
+│   ├── lingframe-example-host-app/     # 宿主应用
+│   ├── lingframe-example-plugin-user/  # 用户插件
+│   └── lingframe-example-plugin-order/ # 订单插件
+├── lingframe-dependencies/     # 依赖版本管理
+└── lingframe-bom/              # 对外提供的 BOM
 ```
 
 ### 三层架构对应
@@ -217,13 +278,7 @@ lingframe/
 3. **文档完善**：帮助改进文档、编写教程
 4. **测试补充**：为核心模块补充单元测试
 
-### 贡献步骤
-
-1. Fork 本仓库
-2. 创建特性分支：`git checkout -b feature/xxx`
-3. 提交代码：`git commit -m 'Add xxx'`
-4. 推送分支：`git push origin feature/xxx`
-5. 提交 Pull Request
+详见 [贡献指南](CONTRIBUTING.md)
 
 ⭐ **Star** 本仓库，关注我们的每一步成长。
 
