@@ -2,21 +2,24 @@ package com.lingframe.core.plugin;
 
 import com.lingframe.api.config.PluginDefinition;
 import com.lingframe.api.context.PluginContext;
-import com.lingframe.api.event.lifecycle.*;
+import com.lingframe.api.event.lifecycle.PluginInstalledEvent;
+import com.lingframe.api.event.lifecycle.PluginInstallingEvent;
+import com.lingframe.api.event.lifecycle.PluginUninstalledEvent;
+import com.lingframe.api.event.lifecycle.PluginUninstallingEvent;
 import com.lingframe.api.security.AccessType;
 import com.lingframe.api.security.PermissionService;
+import com.lingframe.core.config.LingFrameConfig;
 import com.lingframe.core.context.CorePluginContext;
 import com.lingframe.core.event.EventBus;
 import com.lingframe.core.governance.DefaultTransactionVerifier;
 import com.lingframe.core.kernel.GovernanceKernel;
 import com.lingframe.core.kernel.InvocationContext;
-import com.lingframe.core.loader.PluginManifestLoader;
 import com.lingframe.core.proxy.GlobalServiceRoutingProxy;
+import com.lingframe.core.security.DangerousApiVerifier;
 import com.lingframe.core.spi.*;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.File;
-import java.io.FileInputStream;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.util.*;
@@ -36,9 +39,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class PluginManager {
 
     // ==================== 常量 ====================
-
-    private static final int CORE_POOL_SIZE = Runtime.getRuntime().availableProcessors();
-    private static final int MAX_POOL_SIZE = CORE_POOL_SIZE * 2;
     private static final int QUEUE_CAPACITY = 100;
     private static final long KEEP_ALIVE_TIME = 60L;
     private static final int SHUTDOWN_TIMEOUT_SECONDS = 10;
@@ -65,6 +65,8 @@ public class PluginManager {
      */
     private final Map<String, File> pluginSources = new ConcurrentHashMap<>();
 
+    private final Map<String, PluginDefinition> pluginDefinitionMap = new ConcurrentHashMap<>();
+
     // ==================== 核心依赖 ====================
 
     private final ContainerFactory containerFactory;
@@ -86,7 +88,7 @@ public class PluginManager {
 
     // ==================== 基础设施 ====================
 
-    private final PluginRuntimeConfig runtimeConfig;
+    private final LingFrameConfig lingFrameConfig;
     private final ScheduledExecutorService scheduler;
     private final ExecutorService pluginExecutor;
     private final AtomicInteger threadNumber = new AtomicInteger(1);
@@ -101,7 +103,7 @@ public class PluginManager {
                          PluginServiceInvoker pluginServiceInvoker,
                          TransactionVerifier transactionVerifier,
                          List<ThreadLocalPropagator> propagators,
-                         PluginRuntimeConfig runtimeConfig) {
+                         LingFrameConfig lingFrameConfig) {
         // 核心依赖
         this.containerFactory = containerFactory;
         this.pluginLoaderFactory = pluginLoaderFactory;
@@ -116,34 +118,25 @@ public class PluginManager {
                 ? transactionVerifier : new DefaultTransactionVerifier();
 
         // 扩展点（防御性处理）
-        this.verifiers = verifiers != null ? verifiers : Collections.emptyList();
+        this.verifiers = new ArrayList<>();
+        if (verifiers != null) {
+            this.verifiers.addAll(verifiers);
+        }
+        boolean hasBytecodeVerifier = this.verifiers.stream()
+                .anyMatch(v -> v instanceof DangerousApiVerifier);
+        if (!hasBytecodeVerifier) {
+            // 防御性处理：如果没有字节码验证器，添加默认的
+            log.info("No DangerousApiVerifier found in verifiers, adding default DangerousApiVerifier");
+            this.verifiers.add(new DangerousApiVerifier());
+        }
         this.propagators = propagators != null ? propagators : Collections.emptyList();
 
         // 配置
-        this.runtimeConfig = runtimeConfig != null ? runtimeConfig : PluginRuntimeConfig.defaults();
+        this.lingFrameConfig = lingFrameConfig;
 
         // 基础设施
         this.scheduler = createScheduler();
         this.pluginExecutor = createExecutor();
-    }
-
-    /**
-     * 向后兼容的构造函数
-     */
-    public PluginManager(ContainerFactory containerFactory,
-                         PermissionService permissionService,
-                         GovernanceKernel governanceKernel,
-                         PluginLoaderFactory pluginLoaderFactory,
-                         List<PluginSecurityVerifier> verifiers,
-                         EventBus eventBus,
-                         TrafficRouter trafficRouter,
-                         PluginServiceInvoker pluginServiceInvoker,
-                         TransactionVerifier transactionVerifier,
-                         List<ThreadLocalPropagator> propagators) {
-        this(containerFactory, permissionService, governanceKernel,
-                pluginLoaderFactory, verifiers, eventBus, trafficRouter,
-                pluginServiceInvoker, transactionVerifier, propagators,
-                PluginRuntimeConfig.defaults());
     }
 
     // ==================== 安装 API ====================
@@ -151,22 +144,35 @@ public class PluginManager {
     /**
      * 安装 Jar 包插件 (生产模式)
      */
-    public void install(String pluginId, String version, File jarFile) {
-        log.info("Installing plugin: {} v{}", pluginId, version);
+    public void install(PluginDefinition pluginDefinition, File jarFile) {
+        // 验证
+        pluginDefinition.validate();
+
+        String pluginId = pluginDefinition.getId();
+        log.info("Installing plugin: {} v{}", pluginId, pluginDefinition.getVersion());
+
         pluginSources.put(pluginId, jarFile);
-        doInstall(pluginId, version, jarFile, true, Collections.emptyMap());
+        pluginDefinitionMap.put(pluginId, pluginDefinition);
+        doInstall(pluginDefinition, jarFile, true, Collections.emptyMap());
     }
 
     /**
      * 安装目录插件 (开发模式)
      */
-    public void installDev(String pluginId, String version, File classesDir) {
+    public void installDev(PluginDefinition pluginDefinition, File classesDir) {
+        // 验证
+        pluginDefinition.validate();
+
         if (!classesDir.exists() || !classesDir.isDirectory()) {
             throw new IllegalArgumentException("Invalid classes directory: " + classesDir);
         }
+
+        String pluginId = pluginDefinition.getId();
+
         log.info("Installing plugin in DEV mode: {} (Dir: {})", pluginId, classesDir.getName());
         pluginSources.put(pluginId, classesDir);
-        doInstall(pluginId, version, classesDir, true, Collections.emptyMap());
+        pluginDefinitionMap.put(pluginId, pluginDefinition);
+        doInstall(pluginDefinition, classesDir, true, Collections.emptyMap());
     }
 
     /**
@@ -174,8 +180,16 @@ public class PluginManager {
      *
      * @param labels 实例的固有标签
      */
-    public void deployCanary(String pluginId, String version, File source, Map<String, String> labels) {
-        doInstall(pluginId, version, source, false, labels);
+    public void deployCanary(PluginDefinition pluginDefinition, File source, Map<String, String> labels) {
+        // 验证
+        pluginDefinition.validate();
+
+        String pluginId = pluginDefinition.getId();
+
+        log.info("Deploying canary plugin: {} v{}", pluginId, pluginDefinition.getVersion());
+        pluginSources.put(pluginId, source);
+        pluginDefinitionMap.put(pluginId, pluginDefinition);
+        doInstall(pluginDefinition, source, false, labels);
     }
 
     /**
@@ -187,13 +201,20 @@ public class PluginManager {
             log.warn("Cannot reload plugin {}: source not found", pluginId);
             return;
         }
+        PluginDefinition pluginDefinition = pluginDefinitionMap.get(pluginId);
+        if (pluginDefinition == null) {
+            log.warn("Cannot reload plugin {}: pluginDefinition not found", pluginId);
+            return;
+        }
         log.info("Reloading plugin: {}", pluginId);
 
-        PluginRuntime oldRuntime = runtimes.get(pluginId);
-        Map<String, String> oldLabels = (oldRuntime != null)
-                ? oldRuntime.getInstancePool().getDefault().getLabels() // 假设获取主实例标签
-                : Collections.emptyMap();
-        doInstall(pluginId, "dev-reload-" + System.currentTimeMillis(), source, true, oldLabels);
+        // 获取旧标签
+        Map<String, String> oldLabels = getDefaultInstanceLabels(pluginId);
+
+        // ✅ 创建副本再修改，不影响原对象
+        PluginDefinition reloadDef = pluginDefinition.copy();
+        reloadDef.setVersion("dev-reload-" + System.currentTimeMillis());
+        doInstall(reloadDef, source, true, oldLabels);
     }
 
     /**
@@ -215,6 +236,9 @@ public class PluginManager {
 
         // 清理各种状态
         serviceCache.entrySet().removeIf(e -> e.getValue().equals(pluginId));
+        pluginSources.remove(pluginId);
+        pluginDefinitionMap.remove(pluginId);
+
         runtime.shutdown();
         unregisterProtocolServices(pluginId);
         eventBus.unsubscribeAll(pluginId);
@@ -253,22 +277,28 @@ public class PluginManager {
         for (PluginRuntime runtime : runtimes.values()) {
             if (runtime.hasBean(serviceType)) candidates.add(runtime.getPluginId());
         }
-        if (candidates.size() > 1) {
-            // 简单粗暴：抛异常，或者至少打印 ERROR 并固定返回第一个（按字母序排序以保证重启后一致）
-            Collections.sort(candidates);
-            String key = candidates.getFirst();
-            log.warn("Multiple implementations found for {}: {}. Using {}", serviceType, candidates, key);
-            try {
-                T proxy = runtimes.get(key).getServiceProxy(callerPluginId, serviceType);
-                serviceCache.put(serviceType, key);
-                log.debug("Service {} resolved to plugin {}", serviceType.getSimpleName(), key);
-                return proxy;
-            } catch (Exception e) {
-                log.debug("Failed to get service {} from plugin {}: {}",
-                        serviceType.getName(), key, e.getMessage());
-            }
+
+        if (candidates.isEmpty()) {
+            throw new IllegalArgumentException("Service not found: " + serviceType.getName());
         }
-        throw new IllegalArgumentException("Service not found: " + serviceType.getName());
+
+        if (candidates.size() > 1) {
+            Collections.sort(candidates);
+            log.warn("Multiple implementations found for {}: {}. Using {}",
+                    serviceType.getSimpleName(), candidates, candidates.getFirst());
+        }
+
+        // 获取服务（单个或多个取第一个）
+        String targetPluginId = candidates.getFirst();
+        try {
+            T proxy = runtimes.get(targetPluginId).getServiceProxy(callerPluginId, serviceType);
+            serviceCache.put(serviceType, targetPluginId);
+            log.debug("Service {} resolved to plugin {}", serviceType.getSimpleName(), targetPluginId);
+            return proxy;
+        } catch (Exception e) {
+            throw new IllegalArgumentException(
+                    "Failed to get service " + serviceType.getName() + " from " + targetPluginId, e);
+        }
     }
 
     /**
@@ -423,18 +453,32 @@ public class PluginManager {
 
     // ==================== 内部方法 ====================
 
+    private Map<String, String> getDefaultInstanceLabels(String pluginId) {
+        PluginRuntime runtime = runtimes.get(pluginId);
+        if (runtime == null) {
+            return Collections.emptyMap();
+        }
+        PluginInstance defaultInstance = runtime.getInstancePool().getDefault();
+        if (defaultInstance == null) {
+            return Collections.emptyMap();
+        }
+        return new HashMap<>(defaultInstance.getLabels());
+    }
+
     /**
      * 安装或升级插件 (核心入口)
      * <p>
      * 支持热替换：如果插件已存在，则触发蓝绿部署流程
      */
-    private void doInstall(String pluginId, String version, File sourceFile,
+    private void doInstall(PluginDefinition pluginDefinition, File sourceFile,
                            boolean isDefault, Map<String, String> labels) {
+        String pluginId = pluginDefinition.getId();
+        String version = pluginDefinition.getVersion();
         eventBus.publish(new PluginInstallingEvent(pluginId, version, sourceFile));
 
         ClassLoader pluginClassLoader = null;
         PluginContainer container = null;
-
+        boolean isNewRuntime = false;  // ✅ 标记是否新创建
         try {
             // 安全验证
             for (PluginSecurityVerifier verifier : verifiers) {
@@ -445,17 +489,18 @@ public class PluginManager {
             if (runtimes.containsKey(pluginId)) {
                 serviceCache.entrySet().removeIf(e -> e.getValue().equals(pluginId));
                 log.info("[{}] Preparing for upgrade", pluginId);
+            } else {
+                isNewRuntime = true;  // ✅ 标记为新创建
             }
-
-            // 加载配置
-            PluginDefinition definition = loadDefinition(pluginId, version, sourceFile);
 
             // 创建隔离环境
             pluginClassLoader = pluginLoaderFactory.create(pluginId, sourceFile, getClass().getClassLoader());
             container = containerFactory.create(pluginId, sourceFile, pluginClassLoader);
 
             // 创建实例
-            PluginInstance instance = new PluginInstance(version, container, definition);
+            // ✅ 每个实例持有独立副本
+            PluginDefinition instanceDef = pluginDefinition.copy();
+            PluginInstance instance = new PluginInstance(container, instanceDef);
             instance.addLabels(labels);
 
             // 获取或创建运行时
@@ -470,37 +515,34 @@ public class PluginManager {
 
         } catch (Throwable t) {
             log.error("Failed to install plugin: {} v{}", pluginId, version, t);
+
+            // ✅ 清理失败创建的 Runtime
+            if (isNewRuntime) {
+                PluginRuntime failedRuntime = runtimes.remove(pluginId);
+                if (failedRuntime != null) {
+                    try {
+                        failedRuntime.shutdown();
+                    } catch (Exception e) {
+                        log.warn("Failed to cleanup runtime for {}", pluginId, e);
+                    }
+                }
+                // 清理存储
+                pluginSources.remove(pluginId);
+                pluginDefinitionMap.remove(pluginId);
+            }
+
             cleanupOnFailure(pluginClassLoader, container);
-            throw new RuntimeException("Plugin install failed: " + t.getMessage(), t);
+            throw t;
         }
     }
 
     private PluginRuntime createRuntime(String pluginId) {
         return new PluginRuntime(
-                pluginId, runtimeConfig, scheduler, pluginExecutor,
+                pluginId, lingFrameConfig.getRuntimeConfig(),
+                scheduler, pluginExecutor,
                 governanceKernel, eventBus, trafficRouter,
                 pluginServiceInvoker, transactionVerifier, propagators
         );
-    }
-
-    private PluginDefinition loadDefinition(String pluginId, String version, File sourceFile) {
-        PluginDefinition definition = null;
-        File ymlFile = new File(sourceFile, "plugin.yml");
-
-        if (ymlFile.exists()) {
-            try (FileInputStream fis = new FileInputStream(ymlFile)) {
-                definition = PluginManifestLoader.load(fis);
-            } catch (Exception e) {
-                log.warn("Failed to load plugin.yml: {}", e.getMessage());
-            }
-        }
-
-        if (definition == null) {
-            definition = new PluginDefinition();
-        }
-        definition.setId(pluginId);
-        definition.setVersion(version);
-        return definition;
     }
 
     private void cleanupOnFailure(ClassLoader classLoader, PluginContainer container) {
@@ -544,8 +586,8 @@ public class PluginManager {
 
     private ExecutorService createExecutor() {
         return new ThreadPoolExecutor(
-                CORE_POOL_SIZE,
-                MAX_POOL_SIZE,
+                lingFrameConfig.getCorePoolSize(),
+                lingFrameConfig.getCorePoolSize() * 2,
                 KEEP_ALIVE_TIME, TimeUnit.SECONDS,
                 new LinkedBlockingQueue<>(QUEUE_CAPACITY),
                 r -> {

@@ -1,5 +1,6 @@
 package com.lingframe.core.dev;
 
+import com.lingframe.api.config.PluginDefinition;
 import com.lingframe.api.event.LingEventListener;
 import com.lingframe.api.event.lifecycle.PluginUninstalledEvent;
 import com.lingframe.core.event.EventBus;
@@ -31,6 +32,7 @@ public class HotSwapWatcher implements LingEventListener<PluginUninstalledEvent>
 
     // 源码映射：PluginId -> ClassesDir (用于重装)
     private final Map<String, File> pluginSourceMap = new ConcurrentHashMap<>();
+    private final Map<String, PluginDefinition> pluginDefinitionMap = new ConcurrentHashMap<>();
 
     // 重载保护集合：记录当前正在进行热重载的插件ID
     // 防止在重载过程中(先uninstall再install)误触发资源回收逻辑
@@ -211,19 +213,21 @@ public class HotSwapWatcher implements LingEventListener<PluginUninstalledEvent>
                 return;
             }
 
+            PluginDefinition pluginDefinition = pluginDefinitionMap.get(pluginId);
+            if (pluginDefinition == null) {
+                log.warn("PluginDefinition lost for plugin: {}", pluginId);
+                return;
+            }
+
             try {
                 // 标记正在重载 (保护 WatchKey 不被回收)
                 reloadingPlugins.add(pluginId);
-
-                // 获取旧版本号 (假设不变，或者自动升级 snapshot)
-                String ver = pluginManager.getPluginVersion(pluginId);
-                if (ver == null) ver = "1.0.0-SNAPSHOT";
 
                 // 卸载旧版
                 pluginManager.uninstall(pluginId);
 
                 // 安装新版 (Dev模式)
-                pluginManager.installDev(pluginId, ver, source);
+                pluginManager.installDev(pluginDefinition, source);
 
                 log.info("⚡ Hot swap completed: {}", pluginId);
 
@@ -239,6 +243,7 @@ public class HotSwapWatcher implements LingEventListener<PluginUninstalledEvent>
 
     /**
      * 检查是否存在编译错误
+     *
      * @param pluginId 插件ID
      * @return 是否存在编译错误
      */

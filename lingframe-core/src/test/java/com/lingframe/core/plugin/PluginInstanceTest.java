@@ -30,14 +30,27 @@ public class PluginInstanceTest {
     @Mock
     private PluginContainer container;
 
-    @Mock
     private PluginDefinition definition;
 
     private PluginInstance instance;
 
     @BeforeEach
     void setUp() {
-        instance = new PluginInstance("1.0.0", container, definition);
+        definition = createDefinition();
+
+        when(container.isActive()).thenReturn(true);
+
+        instance = new PluginInstance(container, definition);
+    }
+
+    /**
+     * 创建测试用的 PluginDefinition
+     */
+    private PluginDefinition createDefinition() {
+        PluginDefinition def = new PluginDefinition();
+        def.setId("test-plugin");
+        def.setVersion("1.0.0");
+        return def;
     }
 
     // ==================== 构造函数测试 ====================
@@ -58,29 +71,31 @@ public class PluginInstanceTest {
         @Test
         @DisplayName("version 为 null 应抛出异常")
         void shouldThrowWhenVersionIsNull() {
-            assertThrows(NullPointerException.class, () ->
-                    new PluginInstance(null, container, definition));
+            definition.setVersion(null);
+            assertThrows(IllegalArgumentException.class, () ->
+                    new PluginInstance(container, definition));
         }
 
         @Test
         @DisplayName("version 为空白应抛出异常")
         void shouldThrowWhenVersionIsBlank() {
+            definition.setVersion(" ");
             assertThrows(IllegalArgumentException.class, () ->
-                    new PluginInstance("  ", container, definition));
+                    new PluginInstance(container, definition));
         }
 
         @Test
         @DisplayName("container 为 null 应抛出异常")
         void shouldThrowWhenContainerIsNull() {
             assertThrows(NullPointerException.class, () ->
-                    new PluginInstance("1.0.0", null, definition));
+                    new PluginInstance(null, definition));
         }
 
         @Test
         @DisplayName("definition 为 null 应抛出异常")
         void shouldThrowWhenDefinitionIsNull() {
             assertThrows(NullPointerException.class, () ->
-                    new PluginInstance("1.0.0", container, null));
+                    new PluginInstance(container, null));
         }
     }
 

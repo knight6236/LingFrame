@@ -23,7 +23,7 @@ public class DemoServiceTest {
 
     static {
         // 确保插件已加载
-        LingFrameConfig.setDevMode(true);
+        LingFrameConfig.current().setDevMode(true);
     }
 
     @BeforeEach

@@ -47,7 +47,7 @@ public class InstancePoolTest {
         definition.setId(PLUGIN_ID);
         definition.setVersion(version);
 
-        PluginInstance instance = new PluginInstance(version, container, definition);
+        PluginInstance instance = new PluginInstance(container, definition);
         instance.markReady();
         return instance;
     }

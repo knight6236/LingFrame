@@ -28,7 +28,7 @@ public class RedisPermissionInterceptor implements MethodInterceptor {
         Method method = invocation.getMethod();
         String methodName = method.getName();
 
-        // 1. 获取调用方（当前插件ID）
+        // 获取调用方（当前插件ID）
         String callerPluginId = PluginContextHolder.get();
 
         // 如果没有上下文（比如宿主启动时的自检），或者调用的是 Object 的基础方法（toString等），直接放行
@@ -36,16 +36,16 @@ public class RedisPermissionInterceptor implements MethodInterceptor {
             return invocation.proceed();
         }
 
-        // 2. 简单的权限推导逻辑
+        // 简单的权限推导逻辑
         // 实际场景可能需要更细致的映射，比如 opsForValue() 应该返回代理对象
         // 这里主要拦截 RedisTemplate 自身的方法，如 delete, hasKey, expire 等
         AccessType accessType = inferAccessType(methodName);
         String capability = "cache:redis";
 
-        // 3. 权限检查
+        // 权限检查
         boolean allowed = permissionService.isAllowed(callerPluginId, capability, accessType);
 
-        // 4. 审计日志 (异步)
+        // 审计日志 (异步)
         // 记录具体的 Key 通常作为参数 0
         String resource = "redis";
         if (invocation.getArguments().length > 0 && invocation.getArguments()[0] != null) {
@@ -59,7 +59,7 @@ public class RedisPermissionInterceptor implements MethodInterceptor {
             throw new PermissionDeniedException("Plugin [" + callerPluginId + "] denied access to Redis operation: " + methodName);
         }
 
-        // 5. 执行原方法
+        // 执行原方法
         return invocation.proceed();
     }
 

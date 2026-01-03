@@ -19,9 +19,6 @@ import java.util.concurrent.atomic.AtomicLong;
 public class PluginInstance {
 
     @Getter
-    private final String version;
-
-    @Getter
     private final PluginContainer container;
 
     // 插件完整定义 (包含治理配置、扩展参数等)
@@ -45,15 +42,20 @@ public class PluginInstance {
     @Getter
     private volatile boolean destroyed = false;
 
-    public PluginInstance(String version, PluginContainer container, PluginDefinition definition) {
+    public PluginInstance(PluginContainer container, PluginDefinition definition) {
         // 🔥 参数校验
-        this.version = Objects.requireNonNull(version, "version cannot be null");
         this.container = Objects.requireNonNull(container, "container cannot be null");
         this.definition = Objects.requireNonNull(definition, "definition cannot be null");
 
-        if (version.isBlank()) {
-            throw new IllegalArgumentException("version cannot be blank");
-        }
+        definition.validate();
+    }
+
+    public String getVersion() {
+        return definition.getVersion();
+    }
+
+    public String getPluginId() {
+        return definition.getId();
     }
 
     /**
@@ -93,7 +95,7 @@ public class PluginInstance {
      */
     public void markReady() {
         this.ready = true;
-        log.debug("Plugin instance {} marked as ready", version);
+        log.debug("Plugin instance {} marked as ready", definition.getVersion());
     }
 
     /**
@@ -140,7 +142,7 @@ public class PluginInstance {
             // 修正为 0，并记录警告
             activeRequests.compareAndSet(count, 0);
             log.warn("Unbalanced exit() call detected for plugin instance: {}, count was: {}",
-                    version, count);
+                    definition.getVersion(), count);
         }
     }
 
@@ -149,7 +151,7 @@ public class PluginInstance {
      */
     public void markDying() {
         this.dying = true;
-        log.info("Plugin instance {} marked as dying", version);
+        log.info("Plugin instance {} marked as dying", definition.getVersion());
     }
 
     /**
@@ -165,7 +167,7 @@ public class PluginInstance {
      */
     public synchronized void destroy() {
         if (destroyed) {
-            log.debug("Plugin instance {} already destroyed, skipping", version);
+            log.debug("Plugin instance {} already destroyed, skipping", definition.getVersion());
             return;
         }
 
@@ -176,9 +178,9 @@ public class PluginInstance {
         if (container != null && container.isActive()) {
             try {
                 container.stop();
-                log.info("Plugin instance {} destroyed successfully", version);
+                log.info("Plugin instance {} destroyed successfully", definition.getVersion());
             } catch (Exception e) {
-                log.error("Error destroying plugin instance {}: {}", version, e.getMessage(), e);
+                log.error("Error destroying plugin instance {}: {}", definition.getVersion(), e.getMessage(), e);
             }
         }
 
@@ -191,6 +193,6 @@ public class PluginInstance {
     @Override
     public String toString() {
         return String.format("PluginInstance{version='%s', ready=%s, dying=%s, destroyed=%s, activeRequests=%d}",
-                version, ready, dying, destroyed, activeRequests.get());
+                definition.getVersion(), ready, dying, destroyed, activeRequests.get());
     }
 }

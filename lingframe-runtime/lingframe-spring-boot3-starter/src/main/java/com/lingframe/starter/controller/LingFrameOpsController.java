@@ -1,9 +1,12 @@
 package com.lingframe.starter.controller;
 
+import com.lingframe.api.config.PluginDefinition;
+import com.lingframe.core.loader.PluginManifestLoader;
 import com.lingframe.core.plugin.PluginManager;
 import com.lingframe.starter.config.LingFrameProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -21,6 +24,7 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/lingframe/ops")
 @RequiredArgsConstructor
+@ConditionalOnProperty(prefix = "lingframe", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class LingFrameOpsController {
 
     private final PluginManager pluginManager;
@@ -44,27 +48,38 @@ public class LingFrameOpsController {
      * 安装/更新插件 (上传 JAR 包)
      */
     @PostMapping("/install")
-    public String install(@RequestParam("file") MultipartFile file,
-                          @RequestParam(value = "pluginId", required = false) String pluginId,
-                          @RequestParam(value = "version", defaultValue = "1.0.0") String version) {
+    public String install(@RequestParam("file") MultipartFile file) {
         try {
-            // 1. 确定存放路径
-            File pluginDir = new File(properties.getHome());
+            if (file.isEmpty()) {
+                return "Error: File is empty.";
+            }
+
+            // 确定存放路径
+            File pluginDir = new File(properties.getPluginHome());
             if (!pluginDir.exists()) pluginDir.mkdirs();
 
             String originalFilename = file.getOriginalFilename();
+            if (originalFilename == null) {
+                return "Error: File name is null.";
+            }
+
+            if (!originalFilename.endsWith(".jar")) {
+                return "Error: File must be a JAR package.";
+            }
             File targetFile = new File(pluginDir, originalFilename);
 
-            // 2. 保存文件
+            // 保存文件
             file.transferTo(targetFile);
 
-            // 3. 如果没传 pluginId，尝试从文件名解析 (简单演示)
-            String finalPluginId = (pluginId != null) ? pluginId : originalFilename.split("-")[0];
+            PluginDefinition pluginDefinition = PluginManifestLoader.parseDefinition(targetFile);
+            if (pluginDefinition == null) {
+                log.error("Install failed, yaml not exists");
+                return "Error: yaml not exists";
+            }
 
-            // 4. 调用内核安装
-            pluginManager.install(finalPluginId, version, targetFile);
-
-            return "Success: " + finalPluginId + " installed.";
+            // 调用内核安装
+            pluginManager.install(pluginDefinition, targetFile);
+            return "Success: " + pluginDefinition.getId() + " installed.";
         } catch (Exception e) {
             log.error("Install failed", e);
             return "Error: " + e.getMessage();

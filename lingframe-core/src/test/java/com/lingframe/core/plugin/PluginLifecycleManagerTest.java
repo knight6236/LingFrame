@@ -82,7 +82,7 @@ public class PluginLifecycleManagerTest {
         definition.setId(PLUGIN_ID);
         definition.setVersion(version);
 
-        return new PluginInstance(version, container, definition);
+        return new PluginInstance(container, definition);
     }
 
     // ==================== 初始状态测试 ====================
@@ -163,7 +163,7 @@ public class PluginLifecycleManagerTest {
             definition.setId(PLUGIN_ID);
             definition.setVersion("1.0.0");
 
-            PluginInstance instance = new PluginInstance("1.0.0", container, definition);
+            PluginInstance instance = new PluginInstance(container, definition);
 
             assertThrows(RuntimeException.class, () ->
                     lifecycleManager.addInstance(instance, pluginContext, true));

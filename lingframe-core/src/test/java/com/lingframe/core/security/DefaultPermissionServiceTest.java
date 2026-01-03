@@ -20,7 +20,7 @@ class DefaultPermissionServiceTest {
     @AfterEach
     void tearDown() {
         // 重置开发模式设置
-        LingFrameConfig.setDevMode(false);
+        LingFrameConfig.current().setDevMode(false);
     }
 
     @Test
@@ -44,7 +44,7 @@ class DefaultPermissionServiceTest {
         // 现在应该有权限了
         assertTrue(permissionService.isAllowed(pluginId, capability, accessType));
 
-        // READ权限应该被WRITE权限覆盖
+        // READ 权限应该被 WRITE 权限覆盖
         assertTrue(permissionService.isAllowed(pluginId, capability, AccessType.READ));
     }
 
@@ -55,7 +55,7 @@ class DefaultPermissionServiceTest {
         AccessType accessType = AccessType.WRITE;
 
         // 开发模式下，即使没有权限也应该返回true
-        LingFrameConfig.setDevMode(true);
+        LingFrameConfig.current().setDevMode(true);
         assertTrue(permissionService.isAllowed(pluginId, capability, accessType));
     }
 
@@ -65,7 +65,7 @@ class DefaultPermissionServiceTest {
         String capability = "test-capability";
         AccessType accessType = AccessType.WRITE;
 
-        // 初始时应该返回null
+        // 初始时应该返回 null
         assertNull(permissionService.getPermission(pluginId, capability));
 
         // 授予权限
