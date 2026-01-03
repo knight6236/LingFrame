@@ -234,13 +234,16 @@ public class XxxWrapperProcessor implements BeanPostProcessor {
 业务插件在 `plugin.yml` 中声明所需能力：
 
 ```yaml
-plugin:
-  id: my-plugin
+id: my-plugin
+version: 1.0.0
+mainClass: "com.example.MyPlugin"
+
+governance:
   permissions:
-    - capability: "storage:sql"
-      access: "READ"
-    - capability: "cache:redis"
-      access: "WRITE"
+    - methodPattern: "storage:sql"
+      permissionId: "READ"
+    - methodPattern: "cache:redis"
+      permissionId: "WRITE"
 ```
 
 ## 与业务插件的关系

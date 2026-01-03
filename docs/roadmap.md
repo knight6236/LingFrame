@@ -41,7 +41,7 @@ LingFrame 的最终目标不仅是"插件框架"，而是：
 
 **已实现**：
 
-- ✅ 插件生命周期管理（`PluginManager`, `PluginSlot`）
+- ✅ 插件生命周期管理（`PluginManager`, `PluginRuntime`, `InstancePool`）
 - ✅ 蓝绿部署 + 引用计数
 - ✅ Child-First 类加载隔离
 - ✅ Spring 父子上下文隔离

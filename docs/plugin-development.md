@@ -34,6 +34,12 @@
 ### 2. 插件入口类
 
 ```java
+package com.example.myplugin;
+
+import com.lingframe.api.context.PluginContext;
+import com.lingframe.api.plugin.LingPlugin;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
 @SpringBootApplication
 public class MyPlugin implements LingPlugin {
 
@@ -54,14 +60,35 @@ public class MyPlugin implements LingPlugin {
 创建 `src/main/resources/plugin.yml`：
 
 ```yaml
-plugin:
-  id: my-plugin
-  version: 1.0.0
+# 基础元数据
+id: my-plugin
+version: 1.0.0
+provider: "My Company"
+description: "我的插件"
+mainClass: "com.example.myplugin.MyPlugin"
+
+# 依赖声明（可选）
+dependencies:
+  - id: "base-plugin"
+    minVersion: "1.0.0"
+
+# 治理配置
+governance:
   permissions:
-    - capability: "storage:sql"
-      access: "READ"
-    - capability: "cache:redis"
-      access: "WRITE"
+    - methodPattern: "storage:sql"
+      permissionId: "READ"
+    - methodPattern: "cache:redis"
+      permissionId: "WRITE"
+  
+  audits:
+    - methodPattern: "com.example.*Service#delete*"
+      action: "DELETE_OPERATION"
+      enabled: true
+
+# 自定义属性（可选）
+properties:
+  custom-config: "value"
+  timeout: 5000
 ```
 
 ## 暴露服务
@@ -69,17 +96,26 @@ plugin:
 使用 `@LingService` 注解暴露服务：
 
 ```java
-@Component
-public class UserService {
+package com.example.myplugin.service;
 
-    @LingService(id = "query_user", desc = "查询用户")
-    public User queryUser(String userId) {
-        return userRepository.findById(userId).orElse(null);
+import com.lingframe.api.annotation.Auditable;
+import com.lingframe.api.annotation.LingService;
+import com.lingframe.api.annotation.RequiresPermission;
+import org.springframework.stereotype.Component;
+
+@Component
+public class UserServiceImpl implements UserService {
+
+    @LingService(id = "query_user", desc = "根据ID查询用户")
+    @Override
+    public Optional<User> queryUser(String userId) {
+        return userRepository.findById(userId);
     }
 
-    @LingService(id = "create_user", desc = "创建用户", timeout = 5000)
+    @LingService(id = "create_user", desc = "创建新用户", timeout = 5000)
     @RequiresPermission("user:write")
     @Auditable(action = "CREATE_USER", resource = "user")
+    @Override
     public User createUser(User user) {
         return userRepository.save(user);
     }
@@ -100,9 +136,52 @@ public class UserService {
 
 例如：`my-plugin:query_user`
 
-## 调用其他插件
+## 调用其他插件服务
 
-### 通过 FQSID 调用
+LingFrame 提供三种服务调用方式，推荐优先级如下：
+
+### 方式一：@LingReference 注入（强烈推荐）
+
+这是最接近 Spring 原生体验的调用方式：
+
+```java
+package com.example.myplugin.service;
+
+import com.lingframe.api.annotation.LingReference;
+import org.springframework.stereotype.Component;
+
+@Component
+public class OrderService {
+
+    @LingReference
+    private UserService userService;  // 自动注入用户服务
+
+    @LingReference(pluginId = "payment-plugin", timeout = 5000)
+    private PaymentService paymentService;  // 指定插件ID和超时
+
+    public Order createOrder(String userId, List<Item> items) {
+        // 直接调用，如同本地服务
+        User user = userService.queryUser(userId)
+                .orElseThrow(() -> new RuntimeException("用户不存在"));
+
+        // 调用支付服务
+        PaymentResult result = paymentService.processPayment(user, items);
+        
+        return new Order(user, items, result);
+    }
+}
+```
+
+**@LingReference 优点：**
+- 代码最简洁，接近 Spring 原生体验
+- 支持延迟绑定，插件未启动时也能创建代理
+- 自动路由到最新版本插件
+- 支持可选的 pluginId 指定和超时配置
+- 通过 GlobalServiceRoutingProxy 实现智能路由
+
+### 方式二：PluginContext.getService()
+
+适合需要显式错误处理的场景：
 
 ```java
 @Component
@@ -112,26 +191,41 @@ public class OrderService {
     private PluginContext context;
 
     public Order createOrder(String userId, List<Item> items) {
-        // 调用 user-plugin 的 query_user 服务
-        Optional<User> user = context.invoke("user-plugin:query_user", userId);
-
-        if (user.isEmpty()) {
-            throw new RuntimeException("用户不存在");
+        Optional<UserService> userService = context.getService(UserService.class);
+        
+        if (userService.isEmpty()) {
+            throw new RuntimeException("用户服务不可用");
         }
-
-        // 创建订单...
-        return order;
+        
+        User user = userService.get().queryUser(userId)
+                .orElseThrow(() -> new RuntimeException("用户不存在"));
+        return new Order(user, items);
     }
 }
 ```
 
-### 通过接口类型获取
+### 方式三：PluginContext.invoke() FQSID 调用
+
+适合松耦合场景，不需要接口依赖：
 
 ```java
-Optional<UserService> userService = context.getService(UserService.class);
-userService.ifPresent(service -> {
-    User user = service.queryUser("123");
-});
+@Component
+public class OrderService {
+
+    @Autowired
+    private PluginContext context;
+
+    public Order createOrder(String userId, List<Item> items) {
+        // 通过 FQSID 调用
+        Optional<User> user = context.invoke("user-plugin:query_user", userId);
+        
+        if (user.isEmpty()) {
+            throw new RuntimeException("用户不存在");
+        }
+        
+        return new Order(user.get(), items);
+    }
+}
 ```
 
 ## 权限声明
@@ -155,10 +249,11 @@ public void exportUsers() { ... }
 
 ### 开发模式
 
-开发时可开启宽松模式，权限不足仅警告：
+开发时可在配置文件中开启宽松模式，权限不足仅警告：
 
-```java
-LingFrameConfig.setDevMode(true);
+```yaml
+lingframe:
+  dev-mode: true
 ```
 
 ## 审计日志
@@ -181,7 +276,14 @@ public void exportUsers() { ... }
 ```java
 public class UserCreatedEvent implements LingEvent {
     private final String userId;
-    // getter...
+    
+    public UserCreatedEvent(String userId) {
+        this.userId = userId;
+    }
+    
+    public String getUserId() {
+        return userId;
+    }
 }
 
 // 发布
@@ -210,26 +312,30 @@ mvn clean package
 # 生成 target/my-plugin.jar
 ```
 
-将 JAR 放入宿主应用的 plugins 目录，通过 `PluginManager.install()` 加载。
+将 JAR 放入宿主应用的 plugins 目录，框架会自动扫描并加载。
 
 ### 开发模式
 
-直接指向编译输出目录：
+在宿主应用的配置文件中指向编译输出目录：
 
-```java
-pluginManager.installDev("my-plugin", "dev",
-    new File("../my-plugin/target/classes"));
+```yaml
+lingframe:
+  dev-mode: true
+  plugin-roots:
+    - "../my-plugin/target/classes"
 ```
 
-修改代码后重新编译（Ctrl+F9），框架会自动热重载。
+修改代码后重新编译，HotSwapWatcher 会自动检测 target/classes 中的变化并热重载。
 
 ## 最佳实践
 
-1. **依赖最小化**：插件只依赖 `lingframe-api`，不要依赖 `lingframe-core`
-2. **权限声明**：在 `plugin.yml` 中声明所需权限
-3. **服务粒度**：一个 `@LingService` 对应一个业务操作
-4. **异常处理**：使用 `LingException` 及其子类
-5. **日志规范**：使用 SLF4J，避免直接 System.out
+1. **服务调用优先级**：@LingReference > getService() > invoke()
+2. **依赖最小化**：插件只依赖 `lingframe-api`，不要依赖 `lingframe-core`
+3. **权限声明**：在 `plugin.yml` 中声明所需权限
+4. **服务粒度**：一个 `@LingService` 对应一个业务操作
+5. **异常处理**：使用 `LingException` 及其子类
+6. **日志规范**：使用 SLF4J，避免直接 System.out
+7. **接口设计**：为 @LingReference 提供清晰的接口定义
 
 ## 常见问题
 
@@ -240,10 +346,16 @@ pluginManager.installDev("my-plugin", "dev",
 ### 权限被拒绝
 
 1. 检查 `plugin.yml` 中的权限声明
-2. 开发时开启 `LingFrameConfig.setDevMode(true)`
+2. 开发时开启 `lingframe.dev-mode: true`
+
+### @LingReference 注入失败
+
+1. 确保目标插件已启动并注册了对应的服务 Bean
+2. 检查接口类型是否匹配
+3. 如果指定了 pluginId，确保插件ID正确
 
 ### 热重载不生效
 
-1. 确保使用 `installDev()` 安装
-2. 检查 `HotSwapWatcher` 是否正常监听
+1. 确保配置了 `lingframe.dev-mode: true`
+2. 确保在 `plugin-roots` 中配置了插件的 target/classes 目录
 3. 重新编译后等待 500ms（防抖延迟）

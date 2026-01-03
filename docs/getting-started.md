@@ -4,7 +4,7 @@
 
 ## 环境准备
 
-- JDK 21+
+- JDK 21+（后续兼容 JDK 8）
 - Maven 3.8+
 
 ## 构建框架
@@ -18,11 +18,11 @@ mvn clean install -DskipTests
 ## 运行示例
 
 ```bash
-cd lingframe-samples/lingframe-sample-host-app
+cd lingframe-examples/lingframe-example-host-app
 mvn spring-boot:run
 ```
 
-启动后，DevLoader 会自动加载示例插件 `lingframe-sample-plugin-user`。
+启动后，框架会自动扫描并加载配置的插件目录中的插件。
 
 ## 核心概念
 
@@ -69,31 +69,77 @@ mvn spring-boot:run
 @SpringBootApplication
 public class HostApplication {
     public static void main(String[] args) {
-        // 开发模式：权限不足时仅警告
-        LingFrameConfig.setDevMode(true);
         SpringApplication.run(HostApplication.class, args);
     }
 }
 ```
 
-### 3. 加载插件
+### 3. 配置文件
+
+在 `application.yaml` 中配置 LingFrame：
+
+```yaml
+lingframe:
+  enabled: true               # 是否启用框架（默认 true）
+  dev-mode: true              # 开发模式，权限不足时仅警告
+  plugin-home: "plugins"      # 插件 JAR 包目录
+  plugin-roots:               # 插件源码目录（开发模式）
+    - "../my-plugin/target/classes"
+  auto-scan: true             # 启动时自动扫描插件（默认 true）
+  
+  # 审计配置
+  audit:
+    enabled: true             # 开启审计（默认 true）
+    log-console: true         # 控制台输出审计日志（默认 true）
+    queue-size: 1000          # 异步队列大小（默认 1000）
+  
+  # 运行时配置
+  runtime:
+    max-history-snapshots: 5          # 最大历史快照数（默认 5）
+    default-timeout: 3s               # 默认超时时间（默认 3s）
+    bulkhead-max-concurrent: 10       # 最大并发数（默认 10）
+    bulkhead-acquire-timeout: 3s      # 获取许可超时（默认 3s）
+    force-cleanup-delay: 30s          # 强制清理延迟（默认 30s）
+    dying-check-interval: 5s          # 死亡检查间隔（默认 5s）
+  
+  # 治理规则（可选）
+  rules:
+    - pattern: "com.example.*Service#delete*"
+      permission: "order:delete"
+      access: WRITE
+      audit: true
+      audit-action: "DANGEROUS_DELETE"
+      timeout: 5s
+```
+
+### 4. 使用插件服务（推荐方式）
+
+使用 `@LingReference` 注解自动注入插件服务：
 
 ```java
-@Component
+@RestController
 @RequiredArgsConstructor
-public class PluginLoader implements CommandLineRunner {
+public class UserController {
 
-    private final PluginManager pluginManager;
+    @LingReference
+    private UserService userService;  // 自动注入用户服务
 
-    @Override
-    public void run(String... args) {
-        // 生产模式：加载 JAR
-        pluginManager.install("my-plugin", "1.0.0", new File("plugins/my-plugin.jar"));
-
-        // 开发模式：加载编译目录
-        pluginManager.installDev("my-plugin", "dev", new File("target/classes"));
+    @GetMapping("/users/{id}")
+    public User getUser(@PathVariable String id) {
+        return userService.queryUser(id)
+                .orElseThrow(() -> new RuntimeException("用户不存在"));
     }
 }
+```
+
+`@LingReference` 支持以下配置：
+
+```java
+@LingReference(
+    pluginId = "user-plugin",  // 可选：指定插件ID
+    timeout = 5000             // 可选：超时时间（毫秒）
+)
+private UserService userService;
 ```
 
 ## 创建插件
