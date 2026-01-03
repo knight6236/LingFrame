@@ -35,6 +35,7 @@
         <lombok.version>1.18.30</lombok.version>
         <slf4j.version>2.0.17</slf4j.version>
         <caffeine.version>3.2.1</caffeine.version>
+        <asm.version>9.6</asm.version>
 
         <!-- 测试 -->
         <junit-jupiter.version>5.10.1</junit-jupiter.version>
@@ -159,6 +160,13 @@
                 <groupId>com.google.guava</groupId>
                 <artifactId>guava</artifactId>
                 <version>${guava.version}</version>
+            </dependency>
+
+            <!-- ASM 字节码分析 -->
+            <dependency>
+                <groupId>org.ow2.asm</groupId>
+                <artifactId>asm</artifactId>
+                <version>${asm.version}</version>
             </dependency>
 
             <!-- Lombok -->

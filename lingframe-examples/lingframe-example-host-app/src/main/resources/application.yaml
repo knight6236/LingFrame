@@ -7,3 +7,12 @@ spring:
       host: localhost
       port: 6379
       database: 0
+
+lingframe:
+  enabled: true
+  dev-mode: true
+  plugin-home: ../../plugins
+  plugin-roots:
+    - ../lingframe-example-plugin-order
+    - ../lingframe-example-plugin-user
+

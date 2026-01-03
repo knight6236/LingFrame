@@ -5,6 +5,7 @@ import lombok.*;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * 治理策略子节点
@@ -23,6 +24,24 @@ public class GovernancePolicy implements Serializable {
     @Builder.Default
     private List<AuditRule> audits = new ArrayList<>();
 
+    public GovernancePolicy copy() {
+        GovernancePolicy copy = new GovernancePolicy();
+
+        if (this.permissions != null) {
+            copy.permissions = this.permissions.stream()
+                    .map(PermissionRule::copy)
+                    .collect(Collectors.toCollection(ArrayList::new));
+        }
+
+        if (this.audits != null) {
+            copy.audits = this.audits.stream()
+                    .map(AuditRule::copy)
+                    .collect(Collectors.toCollection(ArrayList::new));
+        }
+
+        return copy;
+    }
+
     @Getter
     @Setter
     @Builder
@@ -31,6 +50,13 @@ public class GovernancePolicy implements Serializable {
     public static class PermissionRule implements Serializable {
         private String methodPattern;
         private String permissionId;
+
+        public PermissionRule copy() {
+            PermissionRule copy = new PermissionRule();
+            copy.methodPattern = this.methodPattern;
+            copy.permissionId = this.permissionId;
+            return copy;
+        }
     }
 
     @Getter
@@ -42,6 +68,14 @@ public class GovernancePolicy implements Serializable {
         private String methodPattern;
         private String action;
         private boolean enabled = true;
+
+        public AuditRule copy() {
+            AuditRule copy = new AuditRule();
+            copy.methodPattern = this.methodPattern;
+            copy.action = this.action;
+            copy.enabled = this.enabled;
+            return copy;
+        }
     }
 
 }

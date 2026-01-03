@@ -3,13 +3,15 @@ package com.lingframe.starter.controller;
 import com.lingframe.api.config.GovernancePolicy;
 import com.lingframe.core.governance.LocalGovernanceRegistry;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
 
 @RequiredArgsConstructor
 @RestController
-@RequestMapping("/lingframe/api/governance")
+@RequestMapping("/lingframe/governance")
+@ConditionalOnProperty(prefix = "lingframe", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class GovernanceController {
 
     private final LocalGovernanceRegistry registry;

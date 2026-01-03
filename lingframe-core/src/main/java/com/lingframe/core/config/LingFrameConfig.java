@@ -1,18 +1,87 @@
 package com.lingframe.core.config;
 
-import lombok.Getter;
-import lombok.Setter;
+import com.lingframe.core.plugin.PluginRuntimeConfig;
+import lombok.Builder;
+import lombok.Data;
+import lombok.ToString;
+
+import java.util.Collections;
+import java.util.List;
 
 /**
- * 全局配置中心
+ * LingFrame Core 全局配置对象 (Immutable)
+ * <p>
+ * 职责：作为 Core 层的唯一配置入口，屏蔽 Spring Boot 或其他外部环境的差异。
+ * 包含：
+ * 1. 全局环境设置 (Environment)
+ * 2. 运行时模板 (Runtime Template)
  */
+@Data
+@Builder
+@ToString
 public class LingFrameConfig {
 
+    // ================= 全局环境 (Environment) =================
+
+    private static volatile LingFrameConfig INSTANCE;
+
     /**
-     * 是否开启开发模式
+     * 获取全局配置实例 (静态方法，随处可调)
      */
-    @Setter
-    @Getter
-    private static volatile boolean devMode = false;
+    public static LingFrameConfig current() {
+        if (INSTANCE == null) {
+            // 兜底：如果没有初始化（比如单元测试），返回一个默认值，防止空指针
+            return LingFrameConfig.builder().build();
+        }
+        return INSTANCE;
+    }
+
+    /**
+     * 初始化全局实例 (由 Starter 启动时调用一次)
+     */
+    public static void init(LingFrameConfig config) {
+        INSTANCE = config;
+    }
+
+    /**
+     * 清理全局配置
+     * 场景：单元测试 teardown
+     */
+    public static void clear() {
+        INSTANCE = null;
+    }
+
+    /**
+     * 是否开启开发模式 (影响热重载、日志等级、各类检查的宽松度)
+     */
+    @Builder.Default
+    private boolean devMode = false;
+
+    /**
+     * 插件存放根目录
+     */
+    @Builder.Default
+    private String pluginHome = "plugins";
+
+    /**
+     * 插件额外目录
+     */
+    @Builder.Default
+    private List<String> pluginRoots = Collections.emptyList();
+
+    /**
+     * 核心线程数 (用于 PluginManager 的后台调度器)
+     */
+    @Builder.Default
+    private int corePoolSize = Math.max(2, Runtime.getRuntime().availableProcessors());
+
+    // ================= 运行时模板 (Runtime Template) =================
+
+    /**
+     * 插件运行时的默认配置模板
+     * (当创建新插件实例时，会应用此配置)
+     */
+    @Builder.Default
+    private PluginRuntimeConfig runtimeConfig = PluginRuntimeConfig.defaults();
 
 }

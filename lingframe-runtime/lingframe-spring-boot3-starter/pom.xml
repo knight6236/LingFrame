@@ -45,6 +45,17 @@
             <artifactId>spring-tx</artifactId>
         </dependency>
 
+        <!-- 基础设施依赖 -->
+        <dependency>
+            <groupId>com.lingframe</groupId>
+            <artifactId>lingframe-plugin-storage</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>com.lingframe</groupId>
+            <artifactId>lingframe-plugin-cache</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>

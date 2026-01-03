@@ -38,8 +38,12 @@ public class LingFrameProperties {
      * 插件存放根目录。
      * 支持绝对路径和相对路径。
      */
-    @NotEmpty(message = "插件目录不能为空")
-    private String home = "plugins";
+    private String pluginHome = "plugins";
+
+    /**
+     * 插件额外目录
+     */
+    private List<String> pluginRoots = new ArrayList<>();
 
     /**
      * 启动时是否自动扫描并加载 home 目录下的插件。
@@ -51,6 +55,19 @@ public class LingFrameProperties {
      */
     @Valid // [Key] 级联校验
     private Audit audit = new Audit();
+
+    /**
+     * 治理规则列表。
+     * 用于配置具体的鉴权、流控和审计策略。
+     */
+    @Valid // [Key] 级联校验 List 里的每个元素
+    private List<GovernanceRule> rules = new ArrayList<>();
+
+    /**
+     * 统一管理内核运行时配置
+     */
+    @Valid
+    private Runtime runtime = new Runtime();
 
     @Data
     public static class Audit {
@@ -70,13 +87,6 @@ public class LingFrameProperties {
          */
         private int queueSize = 1000;
     }
-
-    /**
-     * 治理规则列表。
-     * 用于配置具体的鉴权、流控和审计策略。
-     */
-    @Valid // [Key] 级联校验 List 里的每个元素
-    private List<GovernanceRule> rules = new ArrayList<>();
 
     /**
      * 单条治理规则定义
@@ -122,4 +132,26 @@ public class LingFrameProperties {
         @DurationUnit(ChronoUnit.SECONDS)
         private Duration timeout = Duration.ofMillis(-1);
     }
+
+    @Data
+    public static class Runtime {
+        // --- 实例管理 ---
+        private int maxHistorySnapshots = 5;
+
+        @DurationUnit(ChronoUnit.SECONDS)
+        private Duration forceCleanupDelay = Duration.ofSeconds(30);
+
+        @DurationUnit(ChronoUnit.SECONDS)
+        private Duration dyingCheckInterval = Duration.ofSeconds(5);
+
+        // --- 调用控制 ---
+        @DurationUnit(ChronoUnit.MILLIS)
+        private Duration defaultTimeout = Duration.ofMillis(3000);
+
+        private int bulkheadMaxConcurrent = 10;
+
+        @DurationUnit(ChronoUnit.MILLIS)
+        private Duration bulkheadAcquireTimeout = Duration.ofMillis(3000);
+    }
+
 }

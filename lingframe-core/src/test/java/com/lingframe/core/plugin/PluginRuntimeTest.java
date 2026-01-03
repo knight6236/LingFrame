@@ -112,7 +112,7 @@ public class PluginRuntimeTest {
         definition.setId(PLUGIN_ID);
         definition.setVersion(version);
 
-        return new PluginInstance(version, container, definition);
+        return new PluginInstance(container, definition);
     }
 
     public static class TestService {

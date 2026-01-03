@@ -24,16 +24,16 @@ public class DefaultPermissionService implements PermissionService {
 
     @Override
     public boolean isAllowed(String pluginId, String capability, AccessType accessType) {
-        // 1. 白名单放行
+        // 白名单放行
         if (pluginId == null || capability.startsWith(GLOBAL_WHITELIST_PREFIX)) {
             return true;
         }
 
-        // 2. 查表鉴权
+        // 查表鉴权
         boolean allowed = checkInternal(pluginId, capability, accessType);
 
-        // 3. 开发模式兜底
-        if (!allowed && LingFrameConfig.isDevMode()) {
+        // 开发模式兜底
+        if (!allowed && LingFrameConfig.current().isDevMode()) {
             log.warn("==========================================================================");
             log.warn("【开发模式警告】 插件 [{}] 越权访问 [{}] ({})。请在 plugin.yml 中声明: {}",
                     pluginId, capability, accessType, capability);

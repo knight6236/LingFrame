@@ -7,14 +7,18 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.config.BeanPostProcessor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.ApplicationContext;
-import org.springframework.stereotype.Component;
 
 import javax.sql.DataSource;
 
 @Slf4j
-@Component
 @RequiredArgsConstructor
+// 如果宿主没引 JDBC 依赖，这个类直接跳过，不会报错，也不会生效。
+@ConditionalOnClass(DataSource.class)
+// ✅ 跟随框架总开关：框架开启，我就必须开启
+@ConditionalOnProperty(prefix = "lingframe", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class DataSourceWrapperProcessor implements BeanPostProcessor {
 
     private final ApplicationContext applicationContext;

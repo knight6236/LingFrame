@@ -1,7 +1,5 @@
 package com.lingframe.api.security;
 
-import com.lingframe.api.security.AccessType;
-
 /**
  * Core 提供 - 权限查询服务
  * 负责检查插件是否有某项权限，并记录审计日志。

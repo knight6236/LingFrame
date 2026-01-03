@@ -18,16 +18,6 @@
             <artifactId>lingframe-spring-boot3-starter</artifactId>
         </dependency>
 
-        <dependency>
-            <groupId>com.lingframe</groupId>
-            <artifactId>lingframe-plugin-storage</artifactId>
-        </dependency>
-
-        <dependency>
-            <groupId>com.lingframe</groupId>
-            <artifactId>lingframe-plugin-cache</artifactId>
-        </dependency>
-
         <!-- 业务服务 API -->
         <dependency>
             <groupId>com.lingframe</groupId>
