@@ -69,6 +69,11 @@ public class PluginManifestLoader {
     }
 
     private static PluginDefinition load(InputStream inputStream) {
+        if (inputStream == null) {
+            log.error("InputStream is null, cannot load plugin definition");
+            return null;
+        }
+
         // 1. 配置加载选项
         // 注意：SnakeYAML 2.x 建议显式传入 LoaderOptions
         LoaderOptions options = new LoaderOptions();

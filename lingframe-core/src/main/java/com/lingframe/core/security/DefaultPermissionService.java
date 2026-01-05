@@ -50,10 +50,22 @@ public class DefaultPermissionService implements PermissionService {
         AccessType granted = pluginPerms.get(capability);
         if (granted == null) return false;
 
-        // WRITE 包含 READ 权限
-        if (granted == AccessType.WRITE && accessType == AccessType.READ) return true;
+        // 权限等级模型 - WRITE 包含 READ，EXECUTE 是最高级别
+        // 权限级别: NONE < READ < WRITE < EXECUTE
+        int grantedLevel = getPermissionLevel(granted);
+        int requiredLevel = getPermissionLevel(accessType);
+        return grantedLevel >= requiredLevel;
+    }
 
-        return granted == accessType;
+    /**
+     * 获取权限级别数值
+     */
+    private int getPermissionLevel(AccessType accessType) {
+        return switch (accessType) {
+            case READ -> 1;
+            case WRITE -> 2;
+            case EXECUTE -> 3;
+        };
     }
 
     @Override

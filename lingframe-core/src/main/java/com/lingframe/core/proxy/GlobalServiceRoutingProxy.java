@@ -27,7 +27,8 @@ public class GlobalServiceRoutingProxy implements InvocationHandler {
     private final GovernanceKernel governanceKernel;
 
     // 缓存：接口 -> 真正提供服务的插件ID (避免每次都遍历)
-    private static final Map<Class<?>, String> ROUTE_CACHE = new ConcurrentHashMap<>();
+    // 实例级别缓存，防止多实例场景下缓存污染
+    private final Map<Class<?>, String> ROUTE_CACHE = new ConcurrentHashMap<>();
 
     public GlobalServiceRoutingProxy(String callerPluginId, Class<?> serviceInterface,
                                      String targetPluginId, PluginManager pluginManager,
@@ -46,7 +47,7 @@ public class GlobalServiceRoutingProxy implements InvocationHandler {
             return method.invoke(this, args);
         }
 
-        // 1. 实时获取 Runtime (支持延迟绑定)
+        // 实时获取 Runtime (支持延迟绑定)
         String finalId = (targetPluginId != null && !targetPluginId.isEmpty())
                 ? targetPluginId : resolveTargetPluginId();
 
@@ -56,7 +57,7 @@ public class GlobalServiceRoutingProxy implements InvocationHandler {
             throw new IllegalStateException("Service [" + serviceInterface.getName() + "] is currently offline.");
         }
 
-        // 2. 统一使用 SmartServiceProxy 执行治理和路由逻辑
+        // 统一使用 SmartServiceProxy 执行治理和路由逻辑
         // 这样即使宿主调用，也能支持金丝雀分流！
         SmartServiceProxy delegate = new SmartServiceProxy(callerPluginId, runtime,
                 serviceInterface, governanceKernel);

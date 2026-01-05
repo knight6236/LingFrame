@@ -152,10 +152,10 @@ public class InvocationExecutor {
                                String callerPluginId,
                                String fqsid) throws Exception {
 
-        // Step 1: 捕获上下文快照
+        // 捕获上下文快照
         ContextSnapshot snapshot = captureContext();
 
-        // Step 2: 创建异步任务
+        // 创建异步任务
         Callable<Object> task = () -> {
             ContextSnapshot.Scope scope = null;
             try {
@@ -170,18 +170,25 @@ public class InvocationExecutor {
             }
         };
 
-        // Step 3: 获取舱壁许可
+        // 获取舱壁许可
         if (!bulkhead.tryAcquire(acquireTimeoutMs, TimeUnit.MILLISECONDS)) {
             throw new RejectedExecutionException(
                     "Plugin [" + pluginId + "] is busy (Bulkhead full). FQSID: " + fqsid);
         }
 
-        // Step 4: 提交任务并等待结果
+        // 提交任务并等待结果
         try {
             Future<Object> future = executor.submit(task);
             return waitForResult(future, fqsid, callerPluginId);
         } finally {
-            bulkhead.release();
+            // 确保信号量释放，并妥善处理释放过程中的异常
+            // 防止 release() 抛出的异常覆盖原始异常
+            try {
+                bulkhead.release();
+            } catch (IllegalStateException e) {
+                // 记录日志但不抛出，防止掩盖原始异常
+                log.warn("[{}] Failed to release bulkhead permit for FQSID: {}", pluginId, fqsid, e);
+            }
         }
     }
 
