@@ -11,8 +11,8 @@ spring:
 lingframe:
   enabled: true
   dev-mode: true
-  plugin-home: ../../plugins
+  plugin-home: plugins
   plugin-roots:
-    - ../lingframe-example-plugin-order
-    - ../lingframe-example-plugin-user
+    - lingframe-examples/lingframe-example-plugin-order
+    - lingframe-examples/lingframe-example-plugin-user
 

@@ -69,14 +69,17 @@ public class SpringPluginContainer implements PluginContainer {
                 LingPlugin plugin = this.context.getBean(LingPlugin.class);
                 log.info("Triggering onStart for plugin: {}", pluginContext.getPluginId());
                 plugin.onStart(pluginContext);
-
-                // 扫描 @LingService 并注册到 Core
-                // 等待所有Bean初始化完成后再注册服务
-                scheduleServiceRegistration();
             } catch (Exception e) {
                 log.warn("No LingPlugin entry point found in plugin: {}", pluginContext.getPluginId());
             }
 
+            // 扫描 @LingService 并注册到 Core
+            // 等待所有Bean初始化完成后再注册服务
+            try {
+                scheduleServiceRegistration();
+            } catch (Exception e) {
+                log.warn("Failed to register LingServices for plugin: {}", pluginContext.getPluginId(), e);
+            }
         } finally {
             t.setContextClassLoader(old);
         }
