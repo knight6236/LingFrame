@@ -3,6 +3,7 @@ package com.lingframe.starter.configuration;
 import com.lingframe.api.context.PluginContext;
 import com.lingframe.api.security.PermissionService;
 import com.lingframe.core.classloader.DefaultPluginLoaderFactory;
+import com.lingframe.core.classloader.SharedApiManager;
 import com.lingframe.core.config.LingFrameConfig;
 import com.lingframe.core.context.CorePluginContext;
 import com.lingframe.core.dev.HotSwapWatcher;
@@ -50,6 +51,7 @@ import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @Slf4j
 @Configuration
@@ -67,6 +69,9 @@ import java.util.List;
         HostBeanGovernanceProcessor.class
 })
 public class LingFrameAutoConfiguration {
+
+    // 修复子容器可能存在的循环注入的问题
+    private static final AtomicBoolean BOOTSTRAP_DONE = new AtomicBoolean(false);
 
     // 将事件总线注册为 Bean (解耦)
     @Bean
@@ -124,7 +129,7 @@ public class LingFrameAutoConfiguration {
 
     @Bean
     public GovernanceKernel governanceKernel(PermissionService permissionService,
-                                             GovernanceArbitrator arbitrator, EventBus eventBus) {
+            GovernanceArbitrator arbitrator, EventBus eventBus) {
         return new GovernanceKernel(permissionService, arbitrator, eventBus);
     }
 
@@ -168,6 +173,7 @@ public class LingFrameAutoConfiguration {
         // 构建核心配置
         LingFrameConfig lingFrameConfig = LingFrameConfig.builder()
                 .devMode(properties.isDevMode())
+                .autoScan(properties.isAutoScan())
                 .pluginHome(properties.getPluginHome())
                 .pluginRoots(properties.getPluginRoots())
                 .runtimeConfig(runtimeConfig)
@@ -177,6 +183,8 @@ public class LingFrameAutoConfiguration {
                 .hostGovernanceEnabled(properties.getHostGovernance().isEnabled())
                 .hostGovernanceInternalCalls(properties.getHostGovernance().isGovernInternalCalls())
                 .hostCheckPermissions(properties.getHostGovernance().isCheckPermissions())
+                // 共享 API 配置
+                .preloadApiJars(properties.getPreloadApiJars())
                 .build();
 
         // 初始化静态持有者
@@ -187,17 +195,17 @@ public class LingFrameAutoConfiguration {
 
     @Bean
     public PluginManager pluginManager(ContainerFactory containerFactory,
-                                       PermissionService permissionService,
-                                       GovernanceKernel governanceKernel,
-                                       PluginLoaderFactory pluginLoaderFactory,
-                                       ObjectProvider<List<PluginSecurityVerifier>> verifiersProvider,
-                                       EventBus eventBus,
-                                       TrafficRouter trafficRouter,
-                                       PluginServiceInvoker pluginServiceInvoker,
-                                       ObjectProvider<TransactionVerifier> transactionVerifierProvider,
-                                       ObjectProvider<List<ThreadLocalPropagator>> propagatorsProvider,
-                                       LingFrameConfig lingFrameConfig,
-                                       LocalGovernanceRegistry localGovernanceRegistry) {
+            PermissionService permissionService,
+            GovernanceKernel governanceKernel,
+            PluginLoaderFactory pluginLoaderFactory,
+            ObjectProvider<List<PluginSecurityVerifier>> verifiersProvider,
+            EventBus eventBus,
+            TrafficRouter trafficRouter,
+            PluginServiceInvoker pluginServiceInvoker,
+            ObjectProvider<TransactionVerifier> transactionVerifierProvider,
+            ObjectProvider<List<ThreadLocalPropagator>> propagatorsProvider,
+            LingFrameConfig lingFrameConfig,
+            LocalGovernanceRegistry localGovernanceRegistry) {
 
         // 获取可选 Bean
         TransactionVerifier transactionVerifier = transactionVerifierProvider.getIfAvailable();
@@ -218,18 +226,33 @@ public class LingFrameAutoConfiguration {
     }
 
     /**
-     * 启动时的插件扫描任务
-     * 对应配置项: lingframe.auto-scan (默认为 true)
+     * 共享 API 管理器
      */
     @Bean
-    public ApplicationRunner pluginScannerRunner(LingFrameProperties properties,
-                                                 PluginDiscoveryService discoveryService) { // 注入发现服务
+    public SharedApiManager sharedApiManager(LingFrameConfig config) {
+        ClassLoader hostCL = Thread.currentThread().getContextClassLoader();
+        return new SharedApiManager(hostCL, config);
+    }
+
+    /**
+     * 启动时的初始化任务
+     * 1. 预加载共享 API JAR
+     * 2. 扫描并加载插件
+     */
+    @Bean
+    public ApplicationRunner pluginScannerRunner(
+            PluginDiscoveryService discoveryService,
+            SharedApiManager sharedApiManager) {
         return args -> {
-            // 只有当开关开启时才执行
-            if (properties.isAutoScan()) {
-                // 执行扫描逻辑：遍历 homes 目录 -> 发现插件 -> 调用 pluginManager.install
-                discoveryService.scanAndLoad();
+            if (!BOOTSTRAP_DONE.compareAndSet(false, true)) {
+                return; // 已执行过
             }
+            // 预加载共享 API JAR
+            sharedApiManager.preloadFromConfig();
+
+            // 扫描并加载插件
+            discoveryService.scanAndLoad();
+
         };
     }
 
@@ -242,8 +265,8 @@ public class LingFrameAutoConfiguration {
     // 额外注册一个代表宿主的 Context
     @Bean
     public PluginContext hostPluginContext(PluginManager pluginManager,
-                                           PermissionService permissionService,
-                                           EventBus eventBus) {
+            PermissionService permissionService,
+            EventBus eventBus) {
         // 给宿主应用一个固定的 ID，例如 "host-app"
         return new CorePluginContext("host-app", pluginManager, permissionService, eventBus);
     }
@@ -261,7 +284,7 @@ public class LingFrameAutoConfiguration {
 
     @Bean
     public LingWebProxyController lingWebProxyController(WebInterfaceManager manager, PluginManager pluginManager,
-                                                         GovernanceKernel governanceKernel) {
+            GovernanceKernel governanceKernel) {
         return new LingWebProxyController(manager, pluginManager, governanceKernel);
     }
 
@@ -269,8 +292,7 @@ public class LingFrameAutoConfiguration {
     public ApplicationListener<ContextRefreshedEvent> lingWebInitializer(
             WebInterfaceManager manager,
             LingWebProxyController controller,
-            @Qualifier("requestMappingHandlerMapping") RequestMappingHandlerMapping hostMapping
-    ) {
+            @Qualifier("requestMappingHandlerMapping") RequestMappingHandlerMapping hostMapping) {
         return event -> {
             if (event.getApplicationContext().getParent() == null) { // 仅 Host 容器执行
                 try {

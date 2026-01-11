@@ -5,6 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.ToString;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
@@ -15,6 +16,7 @@ import java.util.List;
  * 包含：
  * 1. 全局环境设置 (Environment)
  * 2. 运行时模板 (Runtime Template)
+ * 3. 跨 ClassLoader 配置
  */
 @Data
 @Builder
@@ -56,6 +58,12 @@ public class LingFrameConfig {
      */
     @Builder.Default
     private boolean devMode = false;
+
+    /**
+     * 启动时是否自动扫描并加载 home 目录下的插件。
+     */
+    @Builder.Default
+    private boolean autoScan = true;
 
     /**
      * 插件存放根目录
@@ -106,6 +114,22 @@ public class LingFrameConfig {
      */
     @Builder.Default
     private boolean hostCheckPermissions = false;
+
+    // ================= 共享 API 配置 =================
+
+    /**
+     * 预加载的 API JAR 文件路径列表
+     * <p>
+     * 这些 JAR 会在启动时加载到 SharedApiClassLoader 中，
+     * 实现跨插件的 API 类共享
+     * <p>
+     * 路径支持：
+     * - 绝对路径: /path/to/api.jar
+     * - 相对路径: libs/order-api.jar (相对于 pluginHome)
+     * - Maven 模块: lingframe-examples/lingframe-example-order-api (开发模式)
+     */
+    @Builder.Default
+    private List<String> preloadApiJars = new ArrayList<>();
 
     // ================= 运行时模板 (Runtime Template) =================
 

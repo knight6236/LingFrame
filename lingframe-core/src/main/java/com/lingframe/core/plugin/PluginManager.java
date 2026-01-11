@@ -315,7 +315,8 @@ public class PluginManager {
     @SuppressWarnings("unchecked")
     public <T> T getGlobalServiceProxy(String callerPluginId, Class<T> serviceType, String targetPluginId) {
         return (T) Proxy.newProxyInstance(
-                getClass().getClassLoader(),
+                // 🔥🔥🔥 关键修复：使用接口所在的 ClassLoader 🔥🔥🔥
+                serviceType.getClassLoader(),
                 new Class[]{serviceType},
                 new GlobalServiceRoutingProxy(callerPluginId, serviceType, targetPluginId, this, governanceKernel));
     }

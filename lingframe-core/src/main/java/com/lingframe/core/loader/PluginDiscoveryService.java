@@ -31,6 +31,10 @@ public class PluginDiscoveryService {
      * 执行扫描并加载
      */
     public void scanAndLoad() {
+        if (!config.isAutoScan()) {
+            log.info("AutoScan has bean false.");
+            return;
+        }
         // 用于记录本次扫描已加载的插件ID，防止重复加载（实现优先级覆盖）
         Set<String> loadedPluginIds = new HashSet<>();
         if (!config.getPluginHome().trim().isEmpty()) {

@@ -1,6 +1,6 @@
 package com.lingframe.example.user.controller;
 
-import com.lingframe.example.user.api.UserService;
+import com.lingframe.example.user.service.UserService;
 import com.lingframe.example.user.dto.UserDTO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;

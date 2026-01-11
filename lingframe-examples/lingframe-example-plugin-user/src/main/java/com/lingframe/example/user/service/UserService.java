@@ -1,4 +1,4 @@
-package com.lingframe.example.user.api;
+package com.lingframe.example.user.service;
 
 import com.lingframe.example.user.dto.UserDTO;
 

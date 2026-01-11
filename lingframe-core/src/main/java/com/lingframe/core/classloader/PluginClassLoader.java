@@ -19,18 +19,21 @@ import java.util.concurrent.CopyOnWriteArrayList;
 @Slf4j
 public class PluginClassLoader extends URLClassLoader {
 
-    // 必须强制走父加载器的包（契约包 + JDK）
+    // 必须强制走父加载器的包（契约包 + JDK + 共享 API）
     private static final List<String> FORCE_PARENT_PACKAGES = Arrays.asList(
             "java.", "javax.", "jakarta.", "jdk.", "sun.", "com.sun.", "org.w3c.", "org.xml.",
             "com.lingframe.api.", // API 契约必须共享
             "lombok.", // Lombok 相关类
-            "org.slf4j.",         // 日志门面通常共享
+            "org.slf4j.", // 日志门面通常共享
             "org.apache.logging.log4j.", // Log4j2
-            "ch.qos.logback.",    // Logback
+            "ch.qos.logback.", // Logback
             "org.springframework.", // Spring框架相关类
             "com.fasterxml.jackson.", // Jackson JSON处理
             "org.yaml.snakeyaml." // SnakeYAML
     );
+
+    // 共享 API 包前缀（可动态添加，优先委派给 SharedApiClassLoader）
+    private static final List<String> sharedApiPackages = new CopyOnWriteArrayList<>();
 
     // 可配置的额外委派包列表
     private static final List<String> additionalParentPackages = new CopyOnWriteArrayList<>();
@@ -71,6 +74,25 @@ public class PluginClassLoader extends URLClassLoader {
         }
     }
 
+    /**
+     * 添加共享 API 包前缀（这些包的类将委派给 SharedApiClassLoader 加载）
+     *
+     * @param packages 共享 API 包名前缀列表
+     */
+    public static void addSharedApiPackages(Collection<String> packages) {
+        if (packages != null) {
+            sharedApiPackages.addAll(packages);
+            log.info("📦 Added shared API packages: {}", packages);
+        }
+    }
+
+    /**
+     * 清空共享 API 包列表
+     */
+    public static void clearSharedApiPackages() {
+        sharedApiPackages.clear();
+    }
+
     @Override
     public Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
         // ✅ 关闭状态检查
@@ -83,14 +105,16 @@ public class PluginClassLoader extends URLClassLoader {
         synchronized (getClassLoadingLock(name)) {
             // 检查缓存
             Class<?> c = findLoadedClass(name);
-            if (c != null) return c;
+            if (c != null)
+                return c;
 
             // 白名单强制委派给父加载器 (防止 ClassCastException)
             if (shouldDelegateToParent(name)) {
                 try {
                     c = getParent().loadClass(name);
                     if (c != null) {
-                        if (resolve) resolveClass(c);
+                        if (resolve)
+                            resolveClass(c);
                         return c;
                     }
                 } catch (ClassNotFoundException ignored) {
@@ -101,7 +125,8 @@ public class PluginClassLoader extends URLClassLoader {
             // Child-First: 优先自己加载
             try {
                 c = findClass(name);
-                if (resolve) resolveClass(c);
+                if (resolve)
+                    resolveClass(c);
                 return c;
             } catch (ClassNotFoundException ignored) {
                 // 自己没有，继续兜底
@@ -120,7 +145,8 @@ public class PluginClassLoader extends URLClassLoader {
         }
         // 资源加载也必须 Child-First，否则会读到宿主的 application.properties
         URL url = findResource(name);
-        if (url != null) return url;
+        if (url != null)
+            return url;
         return super.getResource(name);
     }
 
@@ -134,7 +160,8 @@ public class PluginClassLoader extends URLClassLoader {
 
         // 先添加自己的资源
         Enumeration<URL> localUrls = findResources(name);
-        while (localUrls.hasMoreElements()) urls.add(localUrls.nextElement());
+        while (localUrls.hasMoreElements())
+            urls.add(localUrls.nextElement());
         // 再添加父加载器的资源
         ClassLoader parent = getParent();
         if (parent != null) {
@@ -190,6 +217,13 @@ public class PluginClassLoader extends URLClassLoader {
     private boolean shouldDelegateToParent(String name) {
         // ✅ 检查内置白名单
         for (String pkg : FORCE_PARENT_PACKAGES) {
+            if (name.startsWith(pkg)) {
+                return true;
+            }
+        }
+
+        // ✅ 检查共享 API 包（委派给 SharedApiClassLoader）
+        for (String pkg : sharedApiPackages) {
             if (name.startsWith(pkg)) {
                 return true;
             }

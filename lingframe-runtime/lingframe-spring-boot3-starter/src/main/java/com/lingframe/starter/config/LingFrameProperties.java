@@ -35,20 +35,32 @@ public class LingFrameProperties {
     private boolean devMode = false;
 
     /**
+     * 启动时是否自动扫描并加载 home 目录下的插件。
+     */
+    private boolean autoScan = true;
+
+    /**
      * 插件存放根目录。
      * 支持绝对路径和相对路径。
      */
     private String pluginHome = "plugins";
 
     /**
+     * 预加载的 API JAR 文件路径列表
+     * <p>
+     * 这些 JAR 会在启动时加载到 SharedApiClassLoader 中，
+     * 实现跨插件的 API 类共享
+     * <p>
+     * 路径支持：
+     * - 绝对路径: /path/to/api.jar
+     * - 相对路径: libs/order-api.jar (相对于 pluginHome)
+     */
+    private List<String> preloadApiJars = new ArrayList<>();
+
+    /**
      * 插件额外目录
      */
     private List<String> pluginRoots = new ArrayList<>();
-
-    /**
-     * 启动时是否自动扫描并加载 home 目录下的插件。
-     */
-    private boolean autoScan = true;
 
     /**
      * 宿主治理配置

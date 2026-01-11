@@ -1,4 +1,4 @@
-package com.lingframe.example.user.service;
+package com.lingframe.example.user.service.impl;
 
 import com.lingframe.api.annotation.Auditable;
 import com.lingframe.example.order.api.OrderService;

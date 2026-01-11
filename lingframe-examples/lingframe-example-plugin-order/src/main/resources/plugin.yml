@@ -5,10 +5,6 @@ provider: "LingFrame"
 description: "订单插件"
 mainClass: "com.lingframe.example.order.OrderPlugin"
 
-dependencies:
-  - id: "user-plugin"
-    minVersion: "1.0.0"
-
 # --- 治理配置 ---
 governance:
   permissions:

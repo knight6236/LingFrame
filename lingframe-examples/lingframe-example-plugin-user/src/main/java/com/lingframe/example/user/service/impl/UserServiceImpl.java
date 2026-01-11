@@ -1,10 +1,10 @@
-package com.lingframe.example.user.service;
+package com.lingframe.example.user.service.impl;
 
 import com.lingframe.api.annotation.Auditable;
 import com.lingframe.api.annotation.LingService;
 import com.lingframe.api.annotation.RequiresPermission;
-import com.lingframe.example.user.api.UserService;
 import com.lingframe.example.user.dto.UserDTO;
+import com.lingframe.example.user.service.UserService;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;

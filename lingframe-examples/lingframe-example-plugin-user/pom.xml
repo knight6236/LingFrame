@@ -22,11 +22,6 @@
 
         <dependency>
             <groupId>com.lingframe</groupId>
-            <artifactId>lingframe-example-user-api</artifactId>
-        </dependency>
-
-        <dependency>
-            <groupId>com.lingframe</groupId>
             <artifactId>lingframe-example-order-api</artifactId>
         </dependency>
 
