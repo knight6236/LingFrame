@@ -1,89 +1,87 @@
 # 灵珑 (LingFrame)
 
+**让 JVM 应用具备操作系统般的控制和治理能力**
+
 ![Status](https://img.shields.io/badge/Status-Core_Implemented-green)
 ![License](https://img.shields.io/badge/License-Apache_2.0-blue)
 ![Java](https://img.shields.io/badge/Java-21-orange)
 ![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.5.6-brightgreen)
 [![Help Wanted](https://img.shields.io/badge/PRs-welcome-brightgreen)](../../pulls)
 
-> 🟢 **项目状态：核心框架已实现**
->
-> 插件管理、热重载、权限治理、Spring Boot 3 集成等核心功能已可用。
-> 部分基础设施插件和单元测试仍在完善中。
+> 🟢 **核心框架已实现** — 权限治理、审计追踪、能力仲裁、模块隔离等核心功能已可用。
 
 ---
 
-## 📖 愿景
+## 📖 什么是 LingFrame？
 
-**LingFrame** 是一个基于 JVM 的运行时治理框架。
+**LingFrame（灵珑）** 是一个 **JVM 运行时治理框架**，专注于解决 Java 应用中模块间调用的**权限控制**、**审计追踪**和**能力仲裁**问题。
 
-我们致力于为现代 Java 应用构建一个**可控、可扩展、可演进**的运行时体系。
+> ⚠️ 我们使用模块化隔离作为治理的技术手段，核心价值在于**运行时治理能力**——确保每一次跨模块调用都经过权限校验和审计记录。
 
-> **一句话愿景**：让 JVM 应用具备如同操作系统般的插件模型和可控能力。
+**核心能力**：**权限治理** · **审计追踪** · **能力仲裁** · **模块隔离**
 
 ---
 
-## ✅ 已实现的核心能力
+## ✅ 核心治理能力
 
 | 能力                  | 说明                                      | 核心类                                |
 | --------------------- | ----------------------------------------- | ------------------------------------- |
-| **插件生命周期**      | 安装、卸载、热重载，支持蓝绿部署          | `PluginManager`, `PluginRuntime`, `InstancePool` |
-| **类隔离**            | Child-First 类加载器 + 白名单委派         | `PluginClassLoader`                   |
-| **Spring 上下文隔离** | 每个插件独立的父子 ApplicationContext     | `SpringPluginContainer`               |
-| **服务扩展**          | `@LingService` 注解实现 FQSID 路由        | `ServiceRegistry`, `SmartServiceProxy` |
-| **服务注入**          | `@LingReference` 注解自动注入插件服务     | `LingReferenceInjector`, `GlobalServiceRoutingProxy` |
-| **权限治理**          | 智能推导 + `@RequiresPermission` 显式声明 | `GovernanceKernel`, `GovernanceStrategy` |
-| **审计追踪**          | `@Auditable` 注解 + 异步审计日志          | `AuditManager`                        |
-| **开发模式**          | 文件监听 + 防抖热重载                     | `HotSwapWatcher`                      |
+| **权限治理**          | 智能推导 + `@RequiresPermission` 显式声明，所有调用必须经过鉴权 | `GovernanceKernel`, `GovernanceStrategy` |
+| **审计追踪**          | `@Auditable` 注解 + 异步审计日志，完整调用链记录 | `AuditManager`                        |
+| **能力仲裁**          | Core 作为唯一仲裁者，代理所有跨模块调用   | `ServiceRegistry`, `SmartServiceProxy` |
+| **服务路由**          | `@LingService` + `@LingReference` 实现 FQSID 路由 | `LingReferenceInjector`, `GlobalServiceRoutingProxy` |
+| **模块隔离**          | 三层 ClassLoader + Spring 父子上下文      | `SharedApiClassLoader`, `PluginClassLoader`, `SpringPluginContainer` |
+| **热重载**            | 蓝绿部署 + 文件监听，无需重启应用         | `PluginManager`, `InstancePool`, `HotSwapWatcher` |
 
 ---
 
 ## 🎯 我们要解决什么问题
 
-| 痛点                 | 现状困境                    | LingFrame 方案         |
-| :------------------- | :-------------------------- | :--------------------- |
-| **扩展能力缺乏边界** | 扩展逻辑与内核高度耦合      | 三层架构 + 上下文隔离  |
-| **缺乏安全仲裁**     | 业务模块可直接操作 DB/Redis | 零信任 + Core 代理鉴权 |
-| **动态加载能力不足** | 只能启动时加载              | 蓝绿部署 + 热重载      |
+| 痛点                   | 现状困境                              | LingFrame 方案             |
+| :--------------------- | :------------------------------------ | :------------------------- |
+| **调用缺乏鉴权**       | 模块间直接调用，无权限校验            | 所有调用经 Core 代理鉴权   |
+| **操作无法追溯**       | 出问题后难以定位调用链                | 内置审计日志，完整调用追踪 |
+| **模块边界模糊**       | 扩展逻辑与内核高度耦合                | 三层架构 + 上下文隔离      |
+| **缺乏统一治理点**     | 业务模块可直接操作 DB/Redis 等资源    | 基础设施访问统一仲裁       |
 
 ---
 
-## 👤 目标用户
+## 👤 适用场景
 
 | 场景                   | 典型需求                                        |
 | ---------------------- | ----------------------------------------------- |
-| **可扩展产品**         | 核心产品 + 功能插件模式（IDE、CMS、低代码平台） |
-| **二次开发平台**       | 提供标准内核，允许第三方开发者扩展功能          |
-| **SaaS 多租户定制**    | 不同租户启用不同功能模块，按需加载              |
-| **插件市场**           | 用户可自行安装、卸载、升级功能模块              |
-| **大型系统模块化改造** | 将单体应用拆分为可独立演进的插件                |
+| **企业级应用**         | 需要细粒度权限控制和完整审计追踪                |
+| **多模块协作系统**     | 模块间调用需要统一治理和边界隔离                |
+| **二次开发平台**       | 需要对第三方代码进行权限限制和行为审计          |
+| **SaaS 多租户系统**    | 不同租户的功能模块需要隔离和按需加载            |
+| **大型系统模块化改造** | 将单体应用拆分为可独立演进、边界清晰的模块      |
 
 ---
 
-## 💡 核心理念：三层架构
+## 💡 核心理念：治理架构
 
 ```text
 ┌─────────────────────────────────────────────────────────┐
-│                    Core（仲裁核心）                      │
-│         生命周期管理 · 权限治理 · 能力调度 · 上下文隔离    │
-└────────────────────────────┬────────────────────────────┘
-                             ▼
+│                    Core（治理内核）                      │
+│        权限仲裁 · 审计记录 · 能力调度 · 上下文隔离        │
+└────────────────────────────────┬────────────────────────┘
+                                 ▼
 ┌─────────────────────────────────────────────────────────┐
-│           Infrastructure Plugins（基础设施层）           │
-│              存储 · 缓存 · 消息 · 搜索                   │
-└────────────────────────────┬────────────────────────────┘
-                             ▼
+│               Infrastructure（基础设施层）               │
+│    存储代理 · 缓存代理 · 消息代理 · 搜索代理             │
+└────────────────────────────────┬────────────────────────┘
+                                 ▼
 ┌─────────────────────────────────────────────────────────┐
-│             Business Plugins（业务层）                   │
+│                  Business（业务模块层）                  │
 │              用户中心 · 订单服务 · 支付模块               │
 └─────────────────────────────────────────────────────────┘
 ```
 
 **关键设计原则**：
 
-1. **Core 是唯一仲裁者**：不提供业务能力，只负责调度、隔离与权限控制
-2. **业务插件"零信任"**：所有能力调用必须经过 Core 代理与鉴权
-3. **Spring 上下文隔离**：基于父子上下文实现插件隔离，确保卸载后无残留
+1. **Core 是唯一仲裁者**：不提供业务能力，只负责权限校验、审计记录与调用代理
+2. **零信任调用**：所有跨模块调用必须经过 Core 代理与鉴权，无法绕过
+3. **完整审计链**：每一次调用都有迹可循，支持问题追溯和合规审计
 
 ---
 
@@ -119,7 +117,7 @@ lingframe:
   dev-mode: true                    # 开发模式，权限不足时仅警告
   plugin-home: "plugins"            # 插件 JAR 包目录
   plugin-roots:                     # 插件源码目录（开发模式）
-    - "../my-plugin/target/classes"
+    - "../my-plugin"
   auto-scan: true
   
   audit:
@@ -132,43 +130,46 @@ lingframe:
     bulkhead-max-concurrent: 10
 ```
 
-### 创建插件
+### 创建业务模块
 
-1. 创建 Maven 模块，依赖 `lingframe-api`
-2. 实现 `LingPlugin` 接口
-3. 创建 `plugin.yml` 元数据
-4. 使用 `@LingService` 暴露服务
+LingFrame 采用**消费者驱动契约**：消费者定义接口，生产者实现接口。
 
 ```java
-// 插件入口
+// ========== 消费者（Order 插件）定义它需要的接口 ==========
+// 位置：order-api/src/main/java/.../UserQueryService.java
+public interface UserQueryService {
+    Optional<UserDTO> findById(String userId);
+}
+
+// ========== 生产者（User 插件）实现消费者定义的接口 ==========
+// 位置：user-plugin/src/main/java/.../UserQueryServiceImpl.java
 @SpringBootApplication
-public class MyPlugin implements LingPlugin {
+public class UserPlugin implements LingPlugin {
     @Override
     public void onStart(PluginContext context) {
         System.out.println("Plugin started: " + context.getPluginId());
     }
 }
 
-// 暴露服务
 @Component
-public class UserServiceImpl implements UserService {
+public class UserQueryServiceImpl implements UserQueryService {
     
-    @LingService(id = "query_user", desc = "查询用户")
+    @LingService(id = "find_user", desc = "查询用户")
     @Override
-    public Optional<User> queryUser(String userId) {
-        return userRepository.findById(userId);
+    public Optional<UserDTO> findById(String userId) {
+        return userRepository.findById(userId).map(this::toDTO);
     }
 }
 ```
 
-插件元数据 `plugin.yml`：
+模块元数据 `plugin.yml`：
 
 ```yaml
-id: my-plugin
+id: user-plugin
 version: 1.0.0
 provider: "My Company"
-description: "我的插件"
-mainClass: "com.example.MyPlugin"
+description: "用户模块"
+mainClass: "com.example.UserPlugin"
 
 governance:
   permissions:
@@ -176,74 +177,66 @@ governance:
       permissionId: "READ"
 ```
 
-### 调用其他插件服务（三种方式）
+### 跨模块服务调用（经治理内核代理）
 
 ```java
 // 方式一：@LingReference 注入（强烈推荐）
+// Order 插件使用自己定义的接口，由 User 插件实现
 @Component
 public class OrderService {
     
     @LingReference
-    private UserService userService;  // 自动注入
-    
-    @LingReference(pluginId = "user-plugin", timeout = 5000)
-    private UserService userServiceV2;  // 指定插件和超时
+    private UserQueryService userQueryService;  // 框架自动路由到 User 插件的实现
     
     public Order createOrder(String userId) {
-        User user = userService.queryUser(userId)
+        // 此调用会经过 Core 权限校验和审计记录
+        UserDTO user = userQueryService.findById(userId)
                 .orElseThrow(() -> new RuntimeException("用户不存在"));
         return new Order(user);
     }
 }
 
 // 方式二：PluginContext.getService()
-Optional<UserService> service = context.getService(UserService.class);
+Optional<UserQueryService> service = context.getService(UserQueryService.class);
 
 // 方式三：FQSID 协议调用
-Optional<User> user = context.invoke("user-plugin:query_user", userId);
+Optional<UserDTO> user = context.invoke("user-plugin:find_user", userId);
 ```
 
 ---
 
-## 📦 模块结构
+## 📦 项目结构
 
 ```
 lingframe/
 ├── lingframe-api/              # 契约层（接口、注解、异常）
-├── lingframe-core/             # 仲裁内核（插件管理、治理、安全）
+├── lingframe-core/             # 治理内核（权限、审计、模块管理）
 ├── lingframe-runtime/          # 运行时集成
 │   └── lingframe-spring-boot3-starter/  # Spring Boot 3.x 集成
-├── lingframe-plugins-infra/    # 基础设施插件
-│   ├── lingframe-plugin-storage/  # 数据库访问，SQL 级权限控制
-│   └── lingframe-plugin-cache/    # 缓存访问
+├── lingframe-infrastructure/   # 基础设施层
+│   ├── lingframe-infra-storage/   # 存储代理，SQL 级权限
+│   └── lingframe-infra-cache/     # 缓存代理
 ├── lingframe-examples/         # 示例
 │   ├── lingframe-example-host-app/     # 宿主应用
-│   ├── lingframe-example-plugin-user/  # 用户插件
-│   └── lingframe-example-plugin-order/ # 订单插件
+│   ├── lingframe-example-plugin-user/  # 用户模块
+│   └── lingframe-example-plugin-order/ # 订单模块
 ├── lingframe-dependencies/     # 依赖版本管理
 └── lingframe-bom/              # 对外提供的 BOM
 ```
 
-### 三层架构对应
-
-| 层级               | 模块                        | 职责                             |
-| ------------------ | --------------------------- | -------------------------------- |
-| **Core**           | `lingframe-core`            | 仲裁核心：生命周期、权限、调度   |
-| **Infrastructure** | `lingframe-plugins-infra/*` | 基础设施：存储、缓存、消息       |
-| **Business**       | 用户插件                    | 业务逻辑：通过 Core 访问基础设施 |
-
 ---
 
-## 🆚 与现有方案的差异
+## 🆚 为什么不是其他方案？
 
-| 特性            | OSGi     | Java SPI | PF4J       | LingFrame         |
+> LingFrame 的核心价值不是模块化本身，而是**运行时治理**。以下对比聚焦于治理能力。
+
+| 治理能力        | OSGi     | Java SPI | PF4J       | **LingFrame**     |
 | :-------------- | :------- | :------- | :--------- | :---------------- |
-| **权限治理**    | 有但复杂 | 无       | 无         | ✅ 核心特性       |
-| **能力仲裁**    | 服务注册 | 无       | 扩展点     | ✅ Core 代理      |
-| **Spring 集成** | 需适配   | 手动     | 需额外工作 | ✅ 原生父子上下文 |
-| **热插拔**      | ✅       | ❌       | ✅         | ✅ 蓝绿部署       |
+| **细粒度权限**  | 有但复杂 | 无       | 无         | ✅ 核心特性       |
 | **调用链审计**  | 需扩展   | 无       | 无         | ✅ 内置支持       |
-| **学习曲线**    | 陡峭     | 平缓     | 中等       | 中等              |
+| **能力仲裁**    | 服务注册 | 无       | 扩展点     | ✅ Core 强制代理  |
+| **Spring 原生** | 需适配   | 手动     | 需额外工作 | ✅ 父子上下文     |
+| **定位**        | 模块化   | 扩展点   | 插件系统   | **运行时治理**    |
 
 ---
 
@@ -251,21 +244,23 @@ lingframe/
 
 | 阶段        | 目标                                                | 状态          |
 | :---------- | :-------------------------------------------------- | :------------ |
-| **Phase 1** | 核心框架：插件生命周期、权限治理、Spring 集成       | ✅ **已完成** |
-| **Phase 2** | 能力增强：策略引擎、状态句柄化、plugin.yml 配置加载 | 🔄 进行中     |
-| **Phase 3** | 生态完善：缓存/消息插件、单元测试、文档完善         | ⏳ 计划中     |
-| **Phase 4** | 平台化：字节码治理、行为沙箱、可观测性              | ⏳ 远期规划   |
+| **Phase 1** | 核心治理：权限、审计、模块隔离                      | ✅ **已完成** |
+| **Phase 2** | 可视化：Dashboard 治理中心                          | ✅ **基本完成** |
+| **Phase 3** | 弹性治理：熔断、降级、重试、限流                    | 🔄 进行中     |
+| **Phase 4** | 可观测性：指标采集、调用链可视化                    | ⏳ 计划中     |
+| **Phase 5** | 基础设施扩展：消息代理、搜索代理                    | ⏳ 计划中     |
 
 ---
 
 ## 📚 文档
 
 - [快速入门](docs/getting-started.md) - 5 分钟上手
-- [插件开发指南](docs/plugin-development.md) - 开发业务插件
-- [基础设施插件](docs/infrastructure-plugins.md) - 开发基础设施插件
-- [架构设计](docs/architecture.md) - 深入了解框架原理
-- [API 参考](docs/api-reference.md) - 完整 API 文档
-- [路线图](docs/roadmap.md) - 长期愿景与演进计划
+- [模块开发指南](docs/plugin-development.md) - 开发业务模块
+- [共享 API 设计规范](docs/shared-api-guidelines.md) - API 设计最佳实践
+- [基础设施层开发](docs/infrastructure-development.md) - 开发基础设施代理
+- [Dashboard](docs/dashboard.md) - 可视化治理中心
+- [架构设计](docs/architecture.md) - 深入了解治理原理
+- [路线图](docs/roadmap.md) - 演进计划
 
 ---
 
@@ -287,5 +282,3 @@ lingframe/
 ## 📄 许可证
 
 本项目采用 **Apache License 2.0** 授权协议。
-
-**灵珑 (LingFrame) —— 让 JVM 应用具备操作系统般的插件能力。**

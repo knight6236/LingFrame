@@ -98,15 +98,15 @@
                 <version>${revision}</version>
             </dependency>
 
-            <!-- 基础设施插件 -->
+            <!-- 基础设施层 -->
             <dependency>
                 <groupId>com.lingframe</groupId>
-                <artifactId>lingframe-plugin-storage</artifactId>
+                <artifactId>lingframe-infra-storage</artifactId>
                 <version>${revision}</version>
             </dependency>
             <dependency>
                 <groupId>com.lingframe</groupId>
-                <artifactId>lingframe-plugin-cache</artifactId>
+                <artifactId>lingframe-infra-cache</artifactId>
                 <version>${revision}</version>
             </dependency>
 

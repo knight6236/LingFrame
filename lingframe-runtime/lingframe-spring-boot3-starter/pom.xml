@@ -48,12 +48,12 @@
         <!-- 基础设施依赖 -->
         <dependency>
             <groupId>com.lingframe</groupId>
-            <artifactId>lingframe-plugin-storage</artifactId>
+            <artifactId>lingframe-infra-storage</artifactId>
         </dependency>
 
         <dependency>
             <groupId>com.lingframe</groupId>
-            <artifactId>lingframe-plugin-cache</artifactId>
+            <artifactId>lingframe-infra-cache</artifactId>
         </dependency>
 
         <dependency>

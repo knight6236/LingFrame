@@ -24,7 +24,7 @@
         <module>lingframe-api</module>
         <module>lingframe-core</module>
         <module>lingframe-runtime</module>
-        <module>lingframe-plugins-infra</module>
+        <module>lingframe-infrastructure</module>
         <module>lingframe-examples</module>
         <module>lingframe-dashboard</module>
     </modules>

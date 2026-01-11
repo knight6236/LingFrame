@@ -4,10 +4,12 @@
 
 ## 环境准备
 
-- JDK 21+（后续兼容 JDK 8）
+- JDK 21+
 - Maven 3.8+
 
-## 构建框架
+## 5 分钟 Hello World
+
+### 1. 构建项目
 
 ```bash
 git clone https://github.com/lingframe/lingframe.git
@@ -15,14 +17,26 @@ cd lingframe
 mvn clean install -DskipTests
 ```
 
-## 运行示例
+### 2. 启动示例应用
 
 ```bash
 cd lingframe-examples/lingframe-example-host-app
 mvn spring-boot:run
 ```
 
-启动后，框架会自动扫描并加载配置的插件目录中的插件。
+### 3. 测试插件服务
+
+```bash
+# 查询用户列表（user-plugin 提供的服务）
+curl http://localhost:8888/user/listUsers
+
+# 查询单个用户
+curl "http://localhost:8888/user/queryUser?userId=1"
+```
+
+恭喜！你已经成功运行了第一个 LingFrame 应用！
+
+---
 
 ## 核心概念
 
@@ -30,26 +44,28 @@ mvn spring-boot:run
 
 ```
 ┌─────────────────────────────────────────┐
-│           Core（仲裁核心）               │
-│   生命周期管理 · 权限治理 · 上下文隔离    │
+│           Core（治理内核）               │
+│   权限校验 · 审计记录 · 上下文隔离        │
 └─────────────────┬───────────────────────┘
                   ▼
 ┌─────────────────────────────────────────┐
-│     Infrastructure Plugins（基础设施）   │
+│      Infrastructure（基础设施层）        │
 │          存储 · 缓存 · 消息              │
 └─────────────────┬───────────────────────┘
                   ▼
 ┌─────────────────────────────────────────┐
-│       Business Plugins（业务插件）       │
+│         Business（业务模块层）           │
 │      用户中心 · 订单服务 · 支付模块       │
 └─────────────────────────────────────────┘
 ```
 
 ### 关键原则
 
-1. **零信任**：业务插件只能通过 Core 访问基础设施
-2. **上下文隔离**：每个插件独立的 Spring 子上下文
+1. **零信任**：业务模块只能通过 Core 访问基础设施
+2. **上下文隔离**：每个模块独立的 Spring 子上下文
 3. **FQSID 路由**：服务通过 `pluginId:serviceId` 全局唯一标识
+
+---
 
 ## 创建宿主应用
 
@@ -76,78 +92,91 @@ public class HostApplication {
 
 ### 3. 配置文件
 
-在 `application.yaml` 中配置 LingFrame：
+参考示例应用 `application.yaml`：
 
 ```yaml
+server:
+  port: 8888
+
 lingframe:
-  enabled: true               # 是否启用框架（默认 true）
-  dev-mode: true              # 开发模式，权限不足时仅警告
-  plugin-home: "plugins"      # 插件 JAR 包目录
-  plugin-roots:               # 插件源码目录（开发模式）
-    - "../my-plugin/target/classes"
-  auto-scan: true             # 启动时自动扫描插件（默认 true）
+  enabled: true
+  dev-mode: true                    # 开发模式，权限不足时仅警告
   
-  # 审计配置
-  audit:
-    enabled: true             # 开启审计（默认 true）
-    log-console: true         # 控制台输出审计日志（默认 true）
-    queue-size: 1000          # 异步队列大小（默认 1000）
+  # 共享 API 预加载（支持目录/JAR/通配符）
+  preload-api-jars:
+    - lingframe-examples/lingframe-example-order-api
   
-  # 运行时配置
-  runtime:
-    max-history-snapshots: 5          # 最大历史快照数（默认 5）
-    default-timeout: 3s               # 默认超时时间（默认 3s）
-    bulkhead-max-concurrent: 10       # 最大并发数（默认 10）
-    bulkhead-acquire-timeout: 3s      # 获取许可超时（默认 3s）
-    force-cleanup-delay: 30s          # 强制清理延迟（默认 30s）
-    dying-check-interval: 5s          # 死亡检查间隔（默认 5s）
+  # 插件目录
+  plugin-home: plugins              # 生产模式：JAR 包目录
+  plugin-roots:                     # 开发模式：源码目录
+    - lingframe-examples/lingframe-example-plugin-order
+    - lingframe-examples/lingframe-example-plugin-user
   
-  # 治理规则（可选）
-  rules:
-    - pattern: "com.example.*Service#delete*"
-      permission: "order:delete"
-      access: WRITE
-      audit: true
-      audit-action: "DANGEROUS_DELETE"
-      timeout: 5s
+  # 宿主治理（可选）
+  host-governance:
+    enabled: false
+
+# 高阶功能：可视化仪表盘（可选，默认关闭）
+# dashboard:
+#   enabled: true
 ```
 
-### 4. 使用插件服务（推荐方式）
+### 4. 在宿主中调用插件服务
 
-使用 `@LingReference` 注解自动注入插件服务：
+使用 `@LingReference` 自动注入插件服务。LingFrame 采用**消费者驱动契约**：
 
 ```java
+// 宿主应用（消费者）定义它需要的接口
+// 位置：host-api/.../OrderQueryService.java
+public interface OrderQueryService {
+    List<OrderDTO> findByUserId(Long userId);
+}
+
+// Order 插件（生产者）实现宿主定义的接口
+// 位置：order-plugin/.../OrderQueryServiceImpl.java
+@Component
+public class OrderQueryServiceImpl implements OrderQueryService {
+    @LingService(id = "find_orders_by_user", desc = "查询用户订单")
+    @Override
+    public List<OrderDTO> findByUserId(Long userId) {
+        return orderRepository.findByUserId(userId);
+    }
+}
+
+// 宿主应用使用自己定义的接口
 @RestController
 @RequiredArgsConstructor
-public class UserController {
+public class OrderController {
 
     @LingReference
-    private UserService userService;  // 自动注入用户服务
+    private OrderQueryService orderQueryService;  // 框架自动路由到 Order 插件
 
-    @GetMapping("/users/{id}")
-    public User getUser(@PathVariable String id) {
-        return userService.queryUser(id)
-                .orElseThrow(() -> new RuntimeException("用户不存在"));
+    @GetMapping("/orders/user/{userId}")
+    public List<OrderDTO> getUserOrders(@PathVariable Long userId) {
+        return orderQueryService.findByUserId(userId);
     }
 }
 ```
 
-`@LingReference` 支持以下配置：
+---
 
-```java
-@LingReference(
-    pluginId = "user-plugin",  // 可选：指定插件ID
-    timeout = 5000             // 可选：超时时间（毫秒）
-)
-private UserService userService;
+## 示例项目结构
+
+```
+lingframe-examples/
+├── lingframe-example-host-app        # 宿主应用
+├── lingframe-example-order-api       # 共享 API（消费者定义的接口）
+├── lingframe-example-plugin-order    # 订单模块
+└── lingframe-example-plugin-user     # 用户模块（提供 /user/* 接口）
 ```
 
-## 创建插件
+## 创建业务模块
 
-详见 [插件开发指南](plugin-development.md)
+详见 [模块开发指南](plugin-development.md)
 
 ## 下一步
 
-- [插件开发指南](plugin-development.md) - 学习如何开发插件
-- [架构设计](architecture.md) - 深入了解框架架构
-- [API 参考](api-reference.md) - 查看完整 API 文档
+- [模块开发指南](plugin-development.md) - 学习如何开发业务模块
+- [共享 API 设计规范](shared-api-guidelines.md) - API 设计最佳实践
+- [Dashboard 可视化治理](dashboard.md) - 高阶可选功能
+- [架构设计](architecture.md) - 深入了解治理原理

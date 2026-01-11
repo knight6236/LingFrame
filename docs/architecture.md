@@ -7,7 +7,7 @@
 LingFrame 借鉴操作系统的设计思想：
 
 - **微内核**：Core 只负责调度和仲裁，不包含业务逻辑
-- **零信任**：业务插件不能直接访问基础设施，必须经过 Core 代理
+- **零信任**：业务模块不能直接访问基础设施，必须经过 Core 代理
 - **能力隔离**：每个插件在独立的类加载器和 Spring 上下文中运行
 
 ## 三层架构
@@ -17,7 +17,7 @@ LingFrame 借鉴操作系统的设计思想：
 │                      Host Application                        │
 │                                                              │
 │  ┌───────────────────────────────────────────────────────┐  │
-│  │                 Core（仲裁核心）                        │  │
+│  │                 Core（治理内核）                        │  │
 │  │                                                        │  │
 │  │   PluginManager · PermissionService · EventBus        │  │
 │  │   AuditManager · TraceContext · GovernanceStrategy    │  │
@@ -42,13 +42,13 @@ LingFrame 借鉴操作系统的设计思想：
 │  │   User      │   │   Order     │   │  Payment    │       │
 │  │  Plugin     │   │   Plugin    │   │  Plugin     │       │
 │  │             │   │             │   │             │       │
-│  │  业务插件层  │   │  业务插件层  │   │  业务插件层  │       │
+│  │  业务模块层  │   │  业务模块层  │   │  业务模块层  │       │
 │  └─────────────┘   └─────────────┘   └─────────────┘       │
 │                                                              │
 └──────────────────────────────────────────────────────────────┘
 ```
 
-### 第一层：Core（仲裁核心）
+### 第一层：Core（治理内核）
 
 **模块**：`lingframe-core`
 
@@ -80,9 +80,9 @@ LingFrame 借鉴操作系统的设计思想：
 | `EventBus`               | 事件发布订阅           |
 | `GovernanceKernel`       | 治理内核               |
 
-### 第二层：Infrastructure Plugins（基础设施层）
+### 第二层：Infrastructure（基础设施层）
 
-**模块**：`lingframe-plugins-infra/*`
+**模块**：`lingframe-infrastructure/*`
 
 **职责**：
 
@@ -92,10 +92,10 @@ LingFrame 借鉴操作系统的设计思想：
 
 **已实现**：
 
-| 插件                       | 说明                       | 能力标识      |
+| 模块                         | 说明                       | 能力标识      |
 | -------------------------- | -------------------------- | ------------- |
-| `lingframe-plugin-storage` | 数据库访问，SQL 级权限控制 | `storage:sql` |
-| `lingframe-plugin-cache`   | 缓存访问（待实现）         | `cache:redis` |
+| `lingframe-infra-storage`  | 数据库访问，SQL 级权限控制 | `storage:sql` |
+| `lingframe-infra-cache`    | 缓存访问（待实现）         | `cache:redis` |
 
 **工作原理**：
 
@@ -127,7 +127,7 @@ LingFrame 借鉴操作系统的设计思想：
 └─────────────────────────────────────┘
 ```
 
-> 详细开发指南见 [基础设施插件开发](infrastructure-plugins.md)
+> 详细开发指南见 [基础设施代理开发](infrastructure-development.md)
 
 ### 第三层：Business Plugins（业务层）
 
@@ -147,7 +147,7 @@ LingFrame 借鉴操作系统的设计思想：
 
 ## 数据流
 
-### 业务插件调用基础设施
+### 业务模块调用基础设施
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -194,16 +194,21 @@ LingFrame 借鉴操作系统的设计思想：
 > 注：`LingPreparedStatementProxy` 在构造时预解析 SQL 类型并缓存，执行时直接使用。
 > `LingStatementProxy` 则在每次执行时解析传入的 SQL。
 
-### 业务插件调用业务插件（方式一：@LingReference 注入 - 推荐）
+### 业务模块间调用（方式一：@LingReference 注入 - 推荐）
+
+**消费者驱动契约**：Order 插件（消费者）定义 `UserQueryService` 接口，User 插件（生产者）实现
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ Order Plugin                                                 │
+│ Order Plugin（消费者）                                       │
+│                                                              │
+│   // Order 定义它需要的接口（在 order-api 中）               │
+│   interface UserQueryService { UserDTO findById(userId); }  │
 │                                                              │
 │   @LingReference                                             │
-│   private UserService userService;                          │
+│   private UserQueryService userQueryService;                │
 │                                                              │
-│   userService.findById(userId);  // 直接调用                │
+│   userQueryService.findById(userId);  // 直接调用           │
 │         │                                                    │
 └─────────┼────────────────────────────────────────────────────┘
           │
@@ -240,22 +245,24 @@ LingFrame 借鉴操作系统的设计思想：
           │
           ▼
 ┌─────────────────────────────────────────────────────────────┐
-│ User Plugin                                                  │
+│ User Plugin（生产者）                                        │
 │                                                              │
-│   public class UserServiceImpl implements UserService {     │
-│       public User findById(String userId) { ... }           │
+│   // 实现消费者定义的接口                                    │
+│   public class UserQueryServiceImpl implements UserQueryService {
+│       @LingService(id = "find_user", desc = "查询用户")     │
+│       public UserDTO findById(String userId) { ... }        │
 │   }                                                          │
 │                                                              │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### 业务插件调用业务插件（方式二：FQSID 协议调用）
+### 业务模块间调用（方式二：FQSID 协议调用）
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ Order Plugin                                                 │
+│ Order Plugin（消费者）                                       │
 │                                                              │
-│   context.invoke("user-plugin:query_user", userId)          │
+│   context.invoke("user-plugin:find_user", userId)           │
 │         │                                                    │
 └─────────┼────────────────────────────────────────────────────┘
           │
@@ -287,22 +294,25 @@ LingFrame 借鉴操作系统的设计思想：
           │
           ▼
 ┌─────────────────────────────────────────────────────────────┐
-│ User Plugin                                                  │
+│ User Plugin（生产者）                                        │
 │                                                              │
-│   @LingService(id = "query_user")                           │
-│   public User queryUser(String userId) { ... }              │
+│   @LingService(id = "find_user", desc = "查询用户")         │
+│   public UserDTO findById(String userId) { ... }            │
 │                                                              │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### 业务插件调用业务插件（方式三：接口代理调用）
+### 业务模块间调用（方式三：接口代理调用）
+
+**消费者驱动契约**：Order 定义 `UserQueryService` 接口，通过 getService() 获取实现
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ Order Plugin                                                 │
+│ Order Plugin（消费者）                                       │
 │                                                              │
-│   UserService userService = context.getService(UserService.class).get();
-│   userService.queryUser(userId);                            │
+│   // 获取消费者自己定义的接口实现                            │
+│   UserQueryService userService = context.getService(UserQueryService.class).get();
+│   userService.findById(userId);                             │
 │         │                                                    │
 └─────────┼────────────────────────────────────────────────────┘
           │
@@ -330,10 +340,11 @@ LingFrame 借鉴操作系统的设计思想：
           │
           ▼
 ┌─────────────────────────────────────────────────────────────┐
-│ User Plugin                                                  │
+│ User Plugin（生产者）                                        │
 │                                                              │
-│   public class UserServiceImpl implements UserService {     │
-│       public User queryUser(String userId) { ... }          │
+│   // 实现消费者定义的接口                                    │
+│   public class UserQueryServiceImpl implements UserQueryService {
+│       public UserDTO findById(String userId) { ... }        │
 │   }                                                          │
 │                                                              │
 └─────────────────────────────────────────────────────────────┘
@@ -389,30 +400,36 @@ GlobalServiceRoutingProxy.invoke()
 #### 使用示例
 
 ```java
+// Order 插件（消费者）定义它需要的接口（在 order-api 模块中）
+// 位置：order-api/src/main/java/com/example/order/api/UserQueryService.java
+public interface UserQueryService {
+    Optional<UserDTO> findById(String userId);
+}
+
+// User 插件（生产者）实现消费者定义的接口
+// 位置：user-plugin/src/main/java/com/example/user/service/UserQueryServiceImpl.java
+@Component
+public class UserQueryServiceImpl implements UserQueryService {
+    @LingService(id = "find_user_by_id", desc = "根据ID查询用户")
+    @Override
+    public Optional<UserDTO> findById(String userId) {
+        return userRepository.findById(userId).map(this::toDTO);
+    }
+}
+
+// Order 插件中使用自己定义的接口
 @RestController
 public class OrderController {
     
-    // 基本用法：自动发现实现
+    // 注入消费者自己定义的接口，由 User 插件实现
     @LingReference
-    private UserService userService;
-    
-    // 指定插件ID和超时
-    @LingReference(pluginId = "user-plugin-v2", timeout = 5000)
-    private UserService userServiceV2;
-    
-    // 可选插件：如果插件未安装不会报错
-    @LingReference(pluginId = "optional-plugin")
-    private OptionalService optionalService;
+    private UserQueryService userQueryService;
     
     @GetMapping("/orders/{userId}")
     public List<Order> getUserOrders(@PathVariable String userId) {
-        // 直接调用，如同本地服务
-        User user = userService.findById(userId);
-        
-        // 可选服务的安全调用
-        if (optionalService != null) {
-            optionalService.doSomething();
-        }
+        // 直接调用，框架自动路由到 User 插件的实现
+        UserDTO user = userQueryService.findById(userId)
+                .orElseThrow(() -> new RuntimeException("用户不存在"));
         
         return orderService.findByUser(user);
     }
@@ -445,8 +462,8 @@ public class OrderService {
     private PluginContext context;
     
     public Order createOrder(String userId) {
-        // 通过 FQSID 调用，返回 Optional
-        Optional<User> user = context.invoke("user-plugin:findById", userId);
+        // 通过 FQSID 直接调用生产者的服务，返回 Optional
+        Optional<UserDTO> user = context.invoke("user-plugin:find_user", userId);
         
         if (user.isEmpty()) {
             throw new BusinessException("用户不存在");
@@ -459,7 +476,7 @@ public class OrderService {
 
 ### 接口代理调用
 
-适合需要显式错误处理的场景：
+适合需要显式错误处理的场景（消费者定义接口，生产者实现）：
 
 ```java
 @Service
@@ -468,13 +485,15 @@ public class OrderService {
     private PluginContext context;
     
     public Order createOrder(String userId) {
-        Optional<UserService> userService = context.getService(UserService.class);
+        // 获取消费者定义的接口实现（由 User 插件提供）
+        Optional<UserQueryService> userQueryService = context.getService(UserQueryService.class);
         
-        if (userService.isEmpty()) {
-            throw new ServiceUnavailableException("用户服务不可用");
+        if (userQueryService.isEmpty()) {
+            throw new ServiceUnavailableException("用户查询服务不可用");
         }
         
-        User user = userService.get().findById(userId);
+        UserDTO user = userQueryService.get().findById(userId)
+                .orElseThrow(() -> new BusinessException("用户不存在"));
         return new Order(user);
     }
 }
@@ -495,33 +514,58 @@ public class OrderService {
 
 ### 类加载隔离
 
+LingFrame 采用三层 ClassLoader 架构，解决插件间共享 API 的类型一致性问题：
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    AppClassLoader                            │
 │                    (宿主应用)                                 │
 │                                                              │
-│   lingframe-api (共享契约)                                   │
+│   lingframe-api (框架契约)                                   │
 │   lingframe-core                                             │
 │   Spring Boot                                                │
+│                                                              │
+└────────────────────────┬────────────────────────────────────┘
+                         │ parent
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│                 SharedApiClassLoader                         │
+│                 (共享 API 层)                                │
+│                                                              │
+│   order-api.jar (插件间共享的接口和 DTO)                     │
+│   user-api.jar                                               │
+│   ...                                                        │
 │                                                              │
 └────────────────────────┬────────────────────────────────────┘
                          │ parent
          ┌───────────────┼───────────────┐
          ▼               ▼               ▼
 ┌─────────────┐   ┌─────────────┐   ┌─────────────┐
-│PluginClassLoader│PluginClassLoader│PluginClassLoader
-│  (Plugin A)  │   │  (Plugin B)  │   │  (Plugin C)  │
-│              │   │              │   │              │
-│ Child-First  │   │ Child-First  │   │ Child-First  │
-│ 优先加载自己  │   │ 优先加载自己  │   │ 优先加载自己  │
+│PluginCL A  │   │PluginCL B  │   │PluginCL C  │
+│             │   │             │   │             │
+│ Child-First │   │ Child-First │   │ Child-First │
+│ 优先加载自己 │   │ 优先加载自己 │   │ 优先加载自己 │
 └─────────────┘   └─────────────┘   └─────────────┘
+```
+
+**配置共享 API**（`application.yaml`）：
+
+```yaml
+lingframe:
+  preload-api-jars:
+    - libs/order-api.jar              # JAR 文件
+    - lingframe-examples/order-api    # Maven 模块目录
+    - libs/*-api.jar                  # 通配符匹配
 ```
 
 **白名单委派**（强制走父加载器）：
 
 - `java.*`, `javax.*`, `jdk.*`, `sun.*`
-- `com.lingframe.api.*`（契约层必须共享）
-- `org.slf4j.*`（日志门面共享）
+- `com.lingframe.api.*`（框架契约层）
+- `org.slf4j.*`（日志门面）
+- **SharedApiClassLoader 中的所有类**（自动检测）
+
+> 详见 [共享 API 设计规范](shared-api-guidelines.md)
 
 ### Spring 上下文隔离
 
@@ -620,9 +664,9 @@ v1.0 运行中
 
 | 架构层         | Maven 模块                       | 说明                 |
 | -------------- | -------------------------------- | -------------------- |
-| Core           | `lingframe-core`                 | 仲裁核心实现         |
+| Core           | `lingframe-core`                 | 治理内核实现         |
 | Core           | `lingframe-api`                  | 契约层（接口、注解） |
 | Core           | `lingframe-spring-boot3-starter` | Spring Boot 集成     |
-| Infrastructure | `lingframe-plugin-storage`       | 存储插件             |
-| Infrastructure | `lingframe-plugin-cache`         | 缓存插件   |
+| Infrastructure | `lingframe-infra-storage`      | 存储代理             |
+| Infrastructure | `lingframe-infra-cache`        | 缓存代理             |
 | Business       | 用户插件                         | 业务逻辑实现         |
