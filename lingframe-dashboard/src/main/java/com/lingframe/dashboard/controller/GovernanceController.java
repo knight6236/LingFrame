@@ -3,6 +3,7 @@ package com.lingframe.dashboard.controller;
 import com.lingframe.api.config.GovernancePolicy;
 import com.lingframe.dashboard.dto.ApiResponse;
 import com.lingframe.dashboard.dto.ResourcePermissionDTO;
+import com.lingframe.dashboard.service.DashboardService;
 import com.lingframe.core.governance.LocalGovernanceRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -15,16 +16,12 @@ import java.util.Map;
 @RequiredArgsConstructor
 @RestController
 @RequestMapping("/lingframe/dashboard/governance")
-@CrossOrigin(origins = "*")  // 开发阶段允许跨域
-@ConditionalOnProperty(
-        prefix = "lingframe.dashboard",
-        name = "enabled",
-        havingValue = "true",
-        matchIfMissing = false
-)
+@CrossOrigin(origins = "*") // 开发阶段允许跨域
+@ConditionalOnProperty(prefix = "lingframe.dashboard", name = "enabled", havingValue = "true", matchIfMissing = false)
 public class GovernanceController {
 
     private final LocalGovernanceRegistry registry;
+    private final DashboardService dashboardService;
 
     /**
      * 获取所有治理规则
@@ -71,52 +68,18 @@ public class GovernanceController {
 
     /**
      * 更新资源权限 (简化接口，供 Dashboard 使用)
+     * 调用 DashboardService 以使用 PermissionService.grant/revoke
      */
     @PostMapping("/{pluginId}/permissions")
     public ApiResponse<ResourcePermissionDTO> updatePermissions(
             @PathVariable String pluginId,
             @RequestBody ResourcePermissionDTO dto) {
         try {
-            // 转换为 GovernancePolicy
-            GovernancePolicy policy = convertToPolicy(dto);
-            registry.updatePatch(pluginId, policy);
+            dashboardService.updatePermissions(pluginId, dto);
             return ApiResponse.ok("权限已更新", dto);
         } catch (Exception e) {
             log.error("Failed to update permissions for: {}", pluginId, e);
             return ApiResponse.error("权限更新失败: " + e.getMessage());
         }
-    }
-
-    /**
-     * 将前端权限模型转换为治理策略
-     */
-    private GovernancePolicy convertToPolicy(ResourcePermissionDTO dto) {
-        GovernancePolicy policy = new GovernancePolicy();
-
-        // DB 读权限
-        policy.getPermissions().add(GovernancePolicy.PermissionRule.builder()
-                .methodPattern("*")
-                .permissionId(dto.isDbRead() ? "resource:db:read" : "resource:db:read:deny")
-                .build());
-
-        // DB 写权限
-        policy.getPermissions().add(GovernancePolicy.PermissionRule.builder()
-                .methodPattern("*")
-                .permissionId(dto.isDbWrite() ? "resource:db:write" : "resource:db:write:deny")
-                .build());
-
-        // Cache 读权限
-        policy.getPermissions().add(GovernancePolicy.PermissionRule.builder()
-                .methodPattern("*")
-                .permissionId(dto.isCacheRead() ? "resource:cache:read" : "resource:cache:read:deny")
-                .build());
-
-        // Cache 写权限
-        policy.getPermissions().add(GovernancePolicy.PermissionRule.builder()
-                .methodPattern("*")
-                .permissionId(dto.isCacheWrite() ? "resource:cache:write" : "resource:cache:write:deny")
-                .build());
-
-        return policy;
     }
 }

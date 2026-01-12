@@ -1,8 +1,9 @@
 package com.lingframe.dashboard.converter;
 
-
 import com.lingframe.api.config.GovernancePolicy;
-import com.lingframe.core.governance.LocalGovernanceRegistry;
+import com.lingframe.api.security.AccessType;
+import com.lingframe.api.security.Capabilities;
+import com.lingframe.api.security.PermissionService;
 import com.lingframe.core.plugin.PluginRuntime;
 import com.lingframe.dashboard.dto.PluginInfoDTO;
 import com.lingframe.dashboard.dto.TrafficStatsDTO;
@@ -14,8 +15,8 @@ import com.lingframe.dashboard.router.CanaryRouter;
 public class PluginInfoConverter {
 
     public PluginInfoDTO toDTO(PluginRuntime runtime,
-                               CanaryRouter canaryRouter,
-                               LocalGovernanceRegistry registry) {
+            CanaryRouter canaryRouter,
+            PermissionService permissionService) {
         String pluginId = runtime.getPluginId();
 
         return PluginInfoDTO.builder()
@@ -25,7 +26,7 @@ public class PluginInfoConverter {
                 .activeVersion(runtime.getVersion())
                 .canaryPercent(canaryRouter.getCanaryPercent(pluginId))
                 .canaryVersion(runtime.getCanaryVersion())
-                .permissions(extractPermissions(registry.getPatch(pluginId)))
+                .permissions(extractPermissions(pluginId, permissionService))
                 .installedAt(runtime.getInstalledAt())
                 .build();
     }
@@ -46,22 +47,11 @@ public class PluginInfoConverter {
                 .build();
     }
 
-    private PluginInfoDTO.ResourcePermissions extractPermissions(GovernancePolicy policy) {
-        boolean dbRead = true, dbWrite = true, cacheRead = true, cacheWrite = true;
-
-        if (policy != null && policy.getPermissions() != null) {
-            for (GovernancePolicy.PermissionRule rule : policy.getPermissions()) {
-                String perm = rule.getPermissionId();
-                if (perm == null) continue;
-
-                if (perm.contains(":deny") || perm.endsWith(":false")) {
-                    if (perm.contains("db:read")) dbRead = false;
-                    else if (perm.contains("db:write")) dbWrite = false;
-                    else if (perm.contains("cache:read")) cacheRead = false;
-                    else if (perm.contains("cache:write")) cacheWrite = false;
-                }
-            }
-        }
+    private PluginInfoDTO.ResourcePermissions extractPermissions(String pluginId, PermissionService permissionService) {
+        boolean dbRead = permissionService.isAllowed(pluginId, Capabilities.STORAGE_SQL, AccessType.READ);
+        boolean dbWrite = permissionService.isAllowed(pluginId, Capabilities.STORAGE_SQL, AccessType.WRITE);
+        boolean cacheRead = permissionService.isAllowed(pluginId, Capabilities.CACHE_LOCAL, AccessType.READ);
+        boolean cacheWrite = permissionService.isAllowed(pluginId, Capabilities.CACHE_LOCAL, AccessType.WRITE);
 
         return PluginInfoDTO.ResourcePermissions.builder()
                 .dbRead(dbRead)

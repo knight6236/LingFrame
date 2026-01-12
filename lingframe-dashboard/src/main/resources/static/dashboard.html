@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -329,9 +330,12 @@
         }
 
         @keyframes pulse {
-            0%, 100% {
+
+            0%,
+            100% {
                 opacity: 1;
             }
+
             50% {
                 opacity: 0.5;
             }
@@ -382,6 +386,7 @@
                 transform: translateX(100%);
                 opacity: 0;
             }
+
             to {
                 transform: translateX(0);
                 opacity: 1;
@@ -444,14 +449,14 @@
         }
     </style>
 </head>
+
 <body class="h-screen flex overflow-hidden">
 
 <div id="app" class="flex w-full h-full">
 
     <!-- Toast 通知 -->
     <div class="toast-container">
-        <div v-for="(toast, index) in toasts" :key="toast.id"
-             :class="['toast', 'toast-' + toast.type]">
+        <div v-for="(toast, index) in toasts" :key="toast.id" :class="['toast', 'toast-' + toast.type]">
             <i :class="toast.type === 'success' ? 'fa-solid fa-check-circle' :
                        toast.type === 'error' ? 'fa-solid fa-times-circle' : 'fa-solid fa-info-circle'"></i>
             {{ toast.message }}
@@ -477,7 +482,8 @@
                 </button>
                 <button @click="confirmModalAction" :disabled="modal.loading"
                         class="px-4 py-2 rounded-lg text-sm font-medium bg-red-600 hover:bg-red-500 text-white flex items-center gap-2">
-                    <span v-if="modal.loading" class="spinner" style="width:14px;height:14px;border-width:2px;"></span>
+                        <span v-if="modal.loading" class="spinner"
+                              style="width:14px;height:14px;border-width:2px;"></span>
                     确认{{ modal.actionText }}
                 </button>
             </div>
@@ -488,7 +494,8 @@
     <aside class="sidebar" :class="{ open: sidebarOpen }">
         <div class="p-5 border-b border-slate-700">
             <div class="flex items-center gap-3">
-                <div class="w-9 h-9 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center font-bold text-white">
+                <div
+                        class="w-9 h-9 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center font-bold text-white">
                     L
                 </div>
                 <div>
@@ -534,7 +541,8 @@
     <main class="flex-grow flex flex-col overflow-hidden main-area">
 
         <!-- 顶部栏 -->
-        <header class="h-14 bg-slate-800/50 border-b border-slate-700 flex items-center justify-between px-6 flex-shrink-0">
+        <header
+                class="h-14 bg-slate-800/50 border-b border-slate-700 flex items-center justify-between px-6 flex-shrink-0">
             <div class="flex items-center gap-4">
                 <button @click="sidebarOpen = !sidebarOpen" class="lg:hidden text-slate-400 hover:text-white">
                     <i class="fa-solid fa-bars"></i>
@@ -580,23 +588,23 @@
                         </div>
 
                         <div class="max-h-[600px] overflow-y-auto">
-                            <div v-for="p in plugins" :key="p.pluginId"
-                                 @click="selectPlugin(p.pluginId)"
+                            <div v-for="p in plugins" :key="p.pluginId" @click="selectPlugin(p.pluginId)"
                                  :class="['plugin-item', activeId === p.pluginId ? 'active' : '']">
                                 <div class="flex justify-between items-start mb-2">
                                     <span class="font-medium text-white text-sm">{{ p.pluginId }}</span>
-                                    <span :class="['text-[10px] px-2 py-0.5 rounded-full', getStatusClass(p.status)]">
-                                        {{ p.status }}
-                                    </span>
+                                    <span
+                                            :class="['text-[10px] px-2 py-0.5 rounded-full', getStatusClass(p.status)]">
+                                            {{ p.status }}
+                                        </span>
                                 </div>
                                 <div class="flex gap-2 flex-wrap">
-                                    <span class="text-[10px] bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded">
-                                        {{ p.activeVersion || p.versions?.[0] || 'unknown' }}
-                                    </span>
+                                        <span class="text-[10px] bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded">
+                                            {{ p.activeVersion || p.versions?.[0] || 'unknown' }}
+                                        </span>
                                     <span v-if="p.canaryVersion"
                                           class="text-[10px] bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded">
-                                        {{ p.canaryVersion }}
-                                    </span>
+                                            {{ p.canaryVersion }}
+                                        </span>
                                 </div>
                             </div>
                         </div>
@@ -630,8 +638,7 @@
                                     <i class="fa-solid fa-rotate-right"></i>
                                     重置
                                 </button>
-                                <button @click="toggleAuto"
-                                        :disabled="!canOperate"
+                                <button @click="toggleAuto" :disabled="!canOperate"
                                         :class="isAuto ? 'bg-red-600 hover:bg-red-500' : 'bg-blue-600 hover:bg-blue-500'"
                                         class="action-btn text-white text-xs">
                                     <i :class="isAuto ? 'fa-solid fa-stop' : 'fa-solid fa-play'"></i>
@@ -645,14 +652,14 @@
                             <div class="mb-6">
                                 <template v-if="canCanary && canOperate">
                                     <div class="flex justify-between text-xs font-medium mb-3">
-                                        <span class="text-blue-400">
-                                            <i class="fa-solid fa-cube mr-1"></i>
-                                            稳定版 {{ activePlugin?.activeVersion }}: {{ 100 - canaryPct }}%
-                                        </span>
+                                            <span class="text-blue-400">
+                                                <i class="fa-solid fa-cube mr-1"></i>
+                                                稳定版 {{ activePlugin?.activeVersion }}: {{ 100 - canaryPct }}%
+                                            </span>
                                         <span class="text-amber-400">
-                                            灰度版 {{ activePlugin?.canaryVersion }}: {{ canaryPct }}%
-                                            <i class="fa-solid fa-flask ml-1"></i>
-                                        </span>
+                                                灰度版 {{ activePlugin?.canaryVersion }}: {{ canaryPct }}%
+                                                <i class="fa-solid fa-flask ml-1"></i>
+                                            </span>
                                     </div>
                                     <input type="range" v-model.number="canaryPct" @change="updateCanaryConfig"
                                            class="slider-custom" :style="{'--p': (100-canaryPct)+'%'}">
@@ -681,9 +688,11 @@
                                     <div class="text-[10px] text-blue-400 uppercase mb-1">V1 Hit</div>
                                     <div class="text-xl font-bold text-blue-400 font-mono">{{ stats.v1Pct }}%</div>
                                 </div>
-                                <div class="metric-card" :class="canCanary && canOperate ? 'border-amber-500/30' : ''">
+                                <div class="metric-card"
+                                     :class="canCanary && canOperate ? 'border-amber-500/30' : ''">
                                     <div class="text-[10px] uppercase mb-1"
-                                         :class="canCanary && canOperate ? 'text-amber-400' : 'text-slate-500'">V2 Hit
+                                         :class="canCanary && canOperate ? 'text-amber-400' : 'text-slate-500'">V2
+                                        Hit
                                     </div>
                                     <div class="text-xl font-bold font-mono"
                                          :class="canCanary && canOperate ? 'text-amber-400' : 'text-slate-500'">
@@ -721,7 +730,8 @@
                                 </div>
                             </div>
                             <div class="flex items-center gap-3 text-slate-500">
-                                <span class="text-[10px] font-mono">{{ displayLogs.length }}/{{ logs.length }}</span>
+                                    <span class="text-[10px] font-mono">{{ displayLogs.length }}/{{ logs.length
+                                        }}</span>
                                 <button @click="clearLogs" class="hover:text-white transition-all">
                                     <i class="fa-solid fa-eraser"></i>
                                 </button>
@@ -736,16 +746,15 @@
                             </div>
                             <div v-for="l in displayLogs" :key="l.id" class="log-line">
                                 <span class="trace-tag">#{{ l.traceId?.substring(0, 6) || '------' }}</span>
-                                <span v-if="logViewMode === 'all'"
-                                      :class="getPluginTagClass(l.pluginId)"
+                                <span v-if="logViewMode === 'all'" :class="getPluginTagClass(l.pluginId)"
                                       class="text-[9px] px-1.5 py-0.5 rounded font-bold flex-shrink-0">
-                                    {{ getPluginShortName(l.pluginId) }}
-                                </span>
+                                        {{ getPluginShortName(l.pluginId) }}
+                                    </span>
                                 <span :class="getLogColor(l)" class="flex-grow">
-                                    <span v-if="l.depth" class="inline-block"
-                                          :style="{width: (l.depth * 12) + 'px'}"></span>
-                                    {{ l.content }}
-                                </span>
+                                        <span v-if="l.depth" class="inline-block"
+                                              :style="{width: (l.depth * 12) + 'px'}"></span>
+                                        {{ l.content }}
+                                    </span>
                                 <span class="text-[9px] text-slate-600 flex-shrink-0">{{ formatTime(l.timestamp)
                                     }}</span>
                             </div>
@@ -778,7 +787,8 @@
                             <template v-else>
                                 <!-- 生命周期 -->
                                 <div class="mb-4">
-                                    <label class="text-[10px] text-slate-500 uppercase tracking-wider mb-2 block">生命周期</label>
+                                    <label
+                                            class="text-[10px] text-slate-500 uppercase tracking-wider mb-2 block">生命周期</label>
                                     <div class="grid grid-cols-3 gap-2">
                                         <button @click="updateStatus('ACTIVE')"
                                                 :disabled="activePlugin?.status === 'ACTIVE'"
@@ -806,7 +816,8 @@
 
                                 <!-- 资源权限 -->
                                 <div class="mb-4">
-                                    <label class="text-[10px] text-slate-500 uppercase tracking-wider mb-2 block">资源权限</label>
+                                    <label
+                                            class="text-[10px] text-slate-500 uppercase tracking-wider mb-2 block">资源权限</label>
                                     <div class="grid grid-cols-2 gap-2">
                                         <button @click="togglePerm('dbRead')" :disabled="loading.permissions"
                                                 :class="activePlugin?.permissions?.dbRead !== false ? 'perm-btn on' : 'perm-btn off'">
@@ -834,9 +845,10 @@
                     <div class="card">
                         <div class="card-header">
                             <h3 class="font-bold text-sm text-white">功能演练</h3>
-                            <span :class="canOperate ? 'text-green-400' : 'text-red-400'" class="text-[10px] font-bold">
-                                {{ canOperate ? '● READY' : '○ INACTIVE' }}
-                            </span>
+                            <span :class="canOperate ? 'text-green-400' : 'text-red-400'"
+                                  class="text-[10px] font-bold">
+                                    {{ canOperate ? '● READY' : '○ INACTIVE' }}
+                                </span>
                         </div>
                         <div class="p-4">
                             <div v-if="!canOperate"
@@ -872,7 +884,8 @@
                                          :class="ipcEnabled ? 'bg-green-500' : 'bg-slate-600'"
                                          class="w-10 h-5 rounded-full relative transition-all cursor-pointer">
                                         <div :class="ipcEnabled ? 'translate-x-5' : 'translate-x-1'"
-                                             class="absolute top-1 w-3 h-3 bg-white rounded-full transition-transform"></div>
+                                             class="absolute top-1 w-3 h-3 bg-white rounded-full transition-transform">
+                                        </div>
                                     </div>
                                 </div>
                                 <button @click="simulateIPC" :disabled="!canOperate || loading.simulate"
@@ -890,11 +903,12 @@
                          class="card border p-4">
                         <div class="flex justify-between items-start">
                             <div class="flex items-center gap-2">
-                                <i :class="lastAudit.allowed ? 'fa-solid fa-check-circle text-green-400' : 'fa-solid fa-times-circle text-red-400'"></i>
+                                <i
+                                        :class="lastAudit.allowed ? 'fa-solid fa-check-circle text-green-400' : 'fa-solid fa-times-circle text-red-400'"></i>
                                 <span class="font-bold text-xs"
                                       :class="lastAudit.allowed ? 'text-green-400' : 'text-red-400'">
-                                    {{ lastAudit.allowed ? 'SUCCESS' : 'DENIED' }}
-                                </span>
+                                        {{ lastAudit.allowed ? 'SUCCESS' : 'DENIED' }}
+                                    </span>
                             </div>
                             <button @click="lastAudit = null" class="text-slate-500 hover:text-white">
                                 <i class="fa-solid fa-xmark"></i>
@@ -908,31 +922,31 @@
 
                     <!-- 插件信息 -->
                     <!--<div v-if="activePlugin" class="card">
-                        <div class="card-header">
-                            <h3 class="font-bold text-sm text-white">插件信息</h3>
+                    <div class="card-header">
+                        <h3 class="font-bold text-sm text-white">插件信息</h3>
+                    </div>
+                    <div class="p-4 space-y-3 text-xs">
+                        <div class="flex justify-between">
+                            <span class="text-slate-500">ID</span>
+                            <span class="text-white font-mono">{{ activePlugin.pluginId }}</span>
                         </div>
-                        <div class="p-4 space-y-3 text-xs">
-                            <div class="flex justify-between">
-                                <span class="text-slate-500">ID</span>
-                                <span class="text-white font-mono">{{ activePlugin.pluginId }}</span>
-                            </div>
-                            <div class="flex justify-between">
-                                <span class="text-slate-500">状态</span>
-                                <span :class="getStatusClass(activePlugin.status)"
-                                      class="px-2 py-0.5 rounded text-[10px]">
-                                    {{ activePlugin.status }}
-                                </span>
-                            </div>
-                            <div class="flex justify-between">
-                                <span class="text-slate-500">版本数</span>
-                                <span class="text-white">{{ activePlugin.versions?.length || 1 }}</span>
-                            </div>
-                            <div class="flex justify-between">
-                                <span class="text-slate-500">灰度比例</span>
-                                <span class="text-white">{{ activePlugin.canaryPercent || 0 }}%</span>
-                            </div>
+                        <div class="flex justify-between">
+                            <span class="text-slate-500">状态</span>
+                            <span :class="getStatusClass(activePlugin.status)"
+                                  class="px-2 py-0.5 rounded text-[10px]">
+                                {{ activePlugin.status }}
+                            </span>
                         </div>
-                    </div>-->
+                        <div class="flex justify-between">
+                            <span class="text-slate-500">版本数</span>
+                            <span class="text-white">{{ activePlugin.versions?.length || 1 }}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-slate-500">灰度比例</span>
+                            <span class="text-white">{{ activePlugin.canaryPercent || 0 }}%</span>
+                        </div>
+                    </div>
+                </div>-->
                 </div>
 
             </div>
@@ -1226,9 +1240,7 @@
                     // 开始压测
                     stressTimer = setInterval(async () => {
                         try {
-                            const result = await api.post(`/simulate/plugins/${activeId.value}/stress`, {
-                                count: 5
-                            });
+                            const result = await api.post(`/simulate/plugins/${activeId.value}/stress`);
                             // 更新统计
                             stats.total += result.totalRequests;
                             stats.v1 += result.v1Requests;
@@ -1238,7 +1250,7 @@
                         } catch (e) {
                             console.error('Stress test error', e);
                         }
-                    }, 500);
+                    }, 1000);
                 } else {
                     // 停止压测
                     if (stressTimer) {
@@ -1434,4 +1446,5 @@
     }).mount('#app');
 </script>
 </body>
+
 </html>

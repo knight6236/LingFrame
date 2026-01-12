@@ -123,8 +123,8 @@ public class LingFrameAutoConfiguration {
     // 将权限服务注册为 Bean (解耦)
     @Bean
     @ConditionalOnMissingBean
-    public PermissionService permissionService() {
-        return new DefaultPermissionService();
+    public PermissionService permissionService(EventBus eventBus) {
+        return new DefaultPermissionService(eventBus);
     }
 
     @Bean

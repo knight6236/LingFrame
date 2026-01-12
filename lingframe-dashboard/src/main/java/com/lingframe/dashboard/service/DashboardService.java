@@ -1,7 +1,9 @@
 package com.lingframe.dashboard.service;
 
-import com.lingframe.api.config.GovernancePolicy;
 import com.lingframe.api.config.PluginDefinition;
+import com.lingframe.api.security.AccessType;
+import com.lingframe.api.security.Capabilities;
+import com.lingframe.api.security.PermissionService;
 import com.lingframe.core.enums.PluginStatus;
 import com.lingframe.core.governance.LocalGovernanceRegistry;
 import com.lingframe.core.loader.PluginManifestLoader;
@@ -16,7 +18,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.File;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
@@ -29,11 +30,13 @@ public class DashboardService {
     private final LocalGovernanceRegistry governanceRegistry;
     private final CanaryRouter canaryRouter;
     private final PluginInfoConverter converter;
+    private final PermissionService permissionService;
 
     public List<PluginInfoDTO> getAllPluginInfos() {
         return pluginManager.getInstalledPlugins().stream()
-                .map(this::getPluginInfo)
+                .map(pluginManager::getRuntime)
                 .filter(Objects::nonNull)
+                .map(runtime -> converter.toDTO(runtime, canaryRouter, permissionService))
                 .collect(Collectors.toList());
     }
 
@@ -42,7 +45,7 @@ public class DashboardService {
         if (runtime == null) {
             return null;
         }
-        return converter.toDTO(runtime, canaryRouter, governanceRegistry);
+        return converter.toDTO(runtime, canaryRouter, permissionService);
     }
 
     public PluginInfoDTO installPlugin(File file) {
@@ -137,30 +140,24 @@ public class DashboardService {
     }
 
     public void updatePermissions(String pluginId, ResourcePermissionDTO dto) {
-        GovernancePolicy policy = new GovernancePolicy();
-        policy.setPermissions(new ArrayList<>());
+        // SQL 权限
+        if (dto.isDbRead() || dto.isDbWrite()) {
+            AccessType type = dto.isDbWrite() ? AccessType.WRITE : AccessType.READ;
+            permissionService.grant(pluginId, Capabilities.STORAGE_SQL, type);
+        } else {
+            permissionService.revoke(pluginId, Capabilities.STORAGE_SQL);
+        }
 
-        policy.getPermissions().add(GovernancePolicy.PermissionRule.builder()
-                .methodPattern("*")
-                .permissionId(dto.isDbRead() ? "resource:db:read" : "resource:db:read:deny")
-                .build());
+        // 本地缓存权限
+        if (dto.isCacheRead() || dto.isCacheWrite()) {
+            AccessType type = dto.isCacheWrite() ? AccessType.WRITE : AccessType.READ;
+            permissionService.grant(pluginId, Capabilities.CACHE_LOCAL, type);
+        } else {
+            permissionService.revoke(pluginId, Capabilities.CACHE_LOCAL);
+        }
 
-        policy.getPermissions().add(GovernancePolicy.PermissionRule.builder()
-                .methodPattern("*")
-                .permissionId(dto.isDbWrite() ? "resource:db:write" : "resource:db:write:deny")
-                .build());
-
-        policy.getPermissions().add(GovernancePolicy.PermissionRule.builder()
-                .methodPattern("*")
-                .permissionId(dto.isCacheRead() ? "resource:cache:read" : "resource:cache:read:deny")
-                .build());
-
-        policy.getPermissions().add(GovernancePolicy.PermissionRule.builder()
-                .methodPattern("*")
-                .permissionId(dto.isCacheWrite() ? "resource:cache:write" : "resource:cache:write:deny")
-                .build());
-
-        governanceRegistry.updatePatch(pluginId, policy);
+        log.info("Updated permissions for plugin {}: SQL={}/{}, Cache={}/{}",
+                pluginId, dto.isDbRead(), dto.isDbWrite(), dto.isCacheRead(), dto.isCacheWrite());
     }
 
     private boolean isValidTransition(PluginStatus from, PluginStatus to) {

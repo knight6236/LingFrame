@@ -51,10 +51,9 @@ public class SimulateController {
 
     @PostMapping("/plugins/{pluginId}/stress")
     public ApiResponse<StressResultDTO> stressTest(
-            @PathVariable String pluginId,
-            @RequestBody StressRequest request) {
+            @PathVariable String pluginId) {
         try {
-            StressResultDTO result = simulateService.stressTest(pluginId, request.getCount());
+            StressResultDTO result = simulateService.stressTest(pluginId);
             return ApiResponse.ok(result);
         } catch (Exception e) {
             log.error("Stress test failed", e);
@@ -72,10 +71,5 @@ public class SimulateController {
     public static class IpcRequest {
         private String targetPluginId;
         private boolean ipcEnabled;
-    }
-
-    @lombok.Data
-    public static class StressRequest {
-        private int count = 10;// 默认 10 次
     }
 }

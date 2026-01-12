@@ -32,7 +32,7 @@ public class StandardGovernancePolicyProvider implements GovernancePolicyProvide
     }
 
     public StandardGovernancePolicyProvider(LocalGovernanceRegistry localRegistry,
-                                            List<HostGovernanceRule> rawRules) {
+            List<HostGovernanceRule> rawRules) {
         this.localRegistry = localRegistry;
         this.hostRules = rawRules.stream()
                 .map(r -> new CompiledRule(compilePattern(r.getPattern()), r))
@@ -69,7 +69,8 @@ public class StandardGovernancePolicyProvider implements GovernancePolicyProvide
         if (localRegistry != null) {
             GovernancePolicy patch = localRegistry.getPatch(pid);
             GovernanceDecision d1 = matchPolicy(patch, mName);
-            if (d1 != null) return d1;
+            if (d1 != null)
+                return d1;
         }
 
         // === P2: 插件定义 (plugin.yml) ===
@@ -77,7 +78,8 @@ public class StandardGovernancePolicyProvider implements GovernancePolicyProvide
             PluginInstance instance = runtime.getInstancePool().getDefault();
             if (instance != null && instance.getDefinition() != null) {
                 GovernanceDecision d2 = matchPolicy(instance.getDefinition().getGovernance(), mName);
-                if (d2 != null) return d2;
+                if (d2 != null)
+                    return d2;
             }
         }
 
@@ -110,7 +112,8 @@ public class StandardGovernancePolicyProvider implements GovernancePolicyProvide
     // --- 辅助方法 ---
 
     private GovernanceDecision matchPolicy(GovernancePolicy policy, String methodName) {
-        if (policy == null) return null;
+        if (policy == null)
+            return null;
 
         String perm = null;
         if (policy.getPermissions() != null) {
@@ -151,8 +154,10 @@ public class StandardGovernancePolicyProvider implements GovernancePolicyProvide
     }
 
     private boolean isMatch(String pattern, String methodName) {
-        if (pattern == null) return false;
-        if (pattern.equals(methodName)) return true;
+        if (pattern == null)
+            return false;
+        if (pattern.equals(methodName))
+            return true;
         return pattern.endsWith("*") && methodName.startsWith(pattern.substring(0, pattern.length() - 1));
     }
 }

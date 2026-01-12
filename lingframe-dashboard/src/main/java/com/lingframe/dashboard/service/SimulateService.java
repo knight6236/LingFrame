@@ -1,6 +1,7 @@
 package com.lingframe.dashboard.service;
 
 import com.lingframe.api.security.AccessType;
+import com.lingframe.api.security.Capabilities;
 import com.lingframe.core.event.EventBus;
 import com.lingframe.core.event.monitor.MonitoringEvents;
 import com.lingframe.core.kernel.GovernanceKernel;
@@ -41,7 +42,7 @@ public class SimulateService {
         InvocationContext ctx = InvocationContext.builder()
                 .traceId(traceId)
                 .pluginId(pluginId)
-                .callerPluginId("dashboard-simulate")
+                .callerPluginId(pluginId) // 模拟该插件作为调用方
                 .resourceType(mapResourceType(resourceType))
                 .resourceId("simulate:" + resourceType)
                 .operation("simulate_" + resourceType)
@@ -161,7 +162,11 @@ public class SimulateService {
                 .build();
     }
 
-    public StressResultDTO stressTest(String pluginId, int count) {
+    /**
+     * 压测单次路由
+     * 由前端 setInterval 控制频率，后端每次只执行一次路由
+     */
+    public StressResultDTO stressTest(String pluginId) {
         PluginRuntime runtime = pluginManager.getRuntime(pluginId);
         if (runtime == null) {
             throw new IllegalArgumentException("插件不存在: " + pluginId);
@@ -171,51 +176,27 @@ public class SimulateService {
             throw new IllegalStateException("插件未激活: " + pluginId);
         }
 
-        count = Math.min(count, 100);
-        int v1Hit = 0, v2Hit = 0;
+        // 单次路由
+        PluginInstance instance = runtime.routeToAvailableInstance("stress-test");
+        runtime.recordRequest(instance);
 
-        String batchTraceId = generateTraceId();
-        publishTrace(batchTraceId, pluginId, String.format("🚀 压测开始: 共 %d 次请求", count), "START", 0);
+        PluginInstance defaultInstance = runtime.getInstancePool().getDefault();
+        boolean isCanary = (instance != defaultInstance);
 
-        for (int i = 0; i < count; i++) {
-            try {
-                PluginInstance instance = runtime.routeToAvailableInstance("stress-test");
-                runtime.recordRequest(instance);
+        String version = instance.getDefinition().getVersion();
+        String tag = isCanary ? "CANARY" : "STABLE";
 
-                PluginInstance defaultInstance = runtime.getInstancePool().getDefault();
-                boolean isCanary = (instance != defaultInstance);
-
-                if (isCanary) {
-                    v2Hit++;
-                } else {
-                    v1Hit++;
-                }
-
-                if (i < 3 || i % 10 == 0 || i == count - 1) {
-                    String version = instance.getDefinition().getVersion();
-                    String tag = isCanary ? "CANARY" : "STABLE";
-                    publishTrace(generateTraceId(), pluginId,
-                            String.format("→ #%d 路由到: %s (%s)", i + 1, version, tag), tag, 1);
-                }
-            } catch (Exception e) {
-                log.warn("Stress request {} failed: {}", i, e.getMessage());
-            }
-        }
-
-        double v1Pct = count > 0 ? (v1Hit * 100.0 / count) : 0;
-        double v2Pct = count > 0 ? (v2Hit * 100.0 / count) : 0;
-
-        publishTrace(batchTraceId, pluginId,
-                String.format("✅ 压测完成: V1=%d (%.1f%%), V2=%d (%.1f%%)", v1Hit, v1Pct, v2Hit, v2Pct),
-                "COMPLETE", 0);
+        // 发布 Trace
+        publishTrace(generateTraceId(), pluginId,
+                String.format("→ 路由到: %s (%s)", version, tag), tag, 1);
 
         return StressResultDTO.builder()
                 .pluginId(pluginId)
-                .totalRequests(count)
-                .v1Requests(v1Hit)
-                .v2Requests(v2Hit)
-                .v1Percent(v1Pct)
-                .v2Percent(v2Pct)
+                .totalRequests(1)
+                .v1Requests(isCanary ? 0 : 1)
+                .v2Requests(isCanary ? 1 : 0)
+                .v1Percent(isCanary ? 0 : 100)
+                .v2Percent(isCanary ? 100 : 0)
                 .build();
     }
 
@@ -243,7 +224,8 @@ public class SimulateService {
     }
 
     @SuppressWarnings("unused")
-    private void simulatePlaceholder() {}
+    private void simulatePlaceholder() {
+    }
 
     private String mapResourceType(String type) {
         return switch (type) {
@@ -263,10 +245,8 @@ public class SimulateService {
 
     private String mapPermission(String type) {
         return switch (type) {
-            case "dbRead" -> "resource:db:read";
-            case "dbWrite" -> "resource:db:write";
-            case "cacheRead" -> "resource:cache:read";
-            case "cacheWrite" -> "resource:cache:write";
+            case "dbRead", "dbWrite" -> Capabilities.STORAGE_SQL;
+            case "cacheRead", "cacheWrite" -> Capabilities.CACHE_LOCAL;
             default -> "resource:unknown";
         };
     }

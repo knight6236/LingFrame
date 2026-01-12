@@ -14,7 +14,7 @@ class DefaultPermissionServiceTest {
 
     @BeforeEach
     void setUp() {
-        permissionService = new DefaultPermissionService();
+        permissionService = new DefaultPermissionService(null);
     }
 
     @AfterEach

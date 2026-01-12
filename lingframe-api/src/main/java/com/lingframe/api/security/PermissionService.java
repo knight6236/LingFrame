@@ -21,6 +21,16 @@ public interface PermissionService {
     void grant(String pluginId, String capability, AccessType accessType);
 
     /**
+     * 撤销插件的某项权限
+     *
+     * @param pluginId   插件ID
+     * @param capability 能力标识
+     */
+    default void revoke(String pluginId, String capability) {
+        // 默认空实现
+    }
+
+    /**
      * 获取插件的完整权限配置。
      * <p>
      * 注意：此方法返回的权限配置可能包含敏感信息，应谨慎使用，通常只供 Core 内部或特定管理工具使用。

@@ -22,6 +22,9 @@ public class GovernancePolicy implements Serializable {
     private List<PermissionRule> permissions = new ArrayList<>();
 
     @Builder.Default
+    private List<CapabilityRule> capabilities = new ArrayList<>();
+
+    @Builder.Default
     private List<AuditRule> audits = new ArrayList<>();
 
     public GovernancePolicy copy() {
@@ -30,6 +33,12 @@ public class GovernancePolicy implements Serializable {
         if (this.permissions != null) {
             copy.permissions = this.permissions.stream()
                     .map(PermissionRule::copy)
+                    .collect(Collectors.toCollection(ArrayList::new));
+        }
+
+        if (this.capabilities != null) {
+            copy.capabilities = this.capabilities.stream()
+                    .map(CapabilityRule::copy)
                     .collect(Collectors.toCollection(ArrayList::new));
         }
 
@@ -42,6 +51,29 @@ public class GovernancePolicy implements Serializable {
         return copy;
     }
 
+    /**
+     * 资源能力申请规则
+     */
+    @Getter
+    @Setter
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class CapabilityRule implements Serializable {
+        private String capability;
+        private String accessType;
+
+        public CapabilityRule copy() {
+            CapabilityRule copy = new CapabilityRule();
+            copy.capability = this.capability;
+            copy.accessType = this.accessType;
+            return copy;
+        }
+    }
+
+    /**
+     * ACL 权限控制规则
+     */
     @Getter
     @Setter
     @Builder

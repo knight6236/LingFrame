@@ -1,5 +1,6 @@
 package com.lingframe.core.plugin;
 
+import com.lingframe.api.config.GovernancePolicy;
 import com.lingframe.api.config.PluginDefinition;
 import com.lingframe.api.context.PluginContext;
 import com.lingframe.api.event.lifecycle.PluginInstalledEvent;
@@ -515,6 +516,21 @@ public class PluginManager {
             // 创建上下文并添加实例
             PluginContext context = new CorePluginContext(pluginId, this, permissionService, eventBus);
             runtime.addInstance(instance, context, isDefault);
+
+            // ✅ 初始化权限 (从配置加载)
+            if (pluginDefinition.getGovernance() != null
+                    && pluginDefinition.getGovernance().getCapabilities() != null) {
+                for (GovernancePolicy.CapabilityRule rule : pluginDefinition.getGovernance()
+                        .getCapabilities()) {
+                    try {
+                        AccessType accessType = AccessType.valueOf(rule.getAccessType().toUpperCase());
+                        permissionService.grant(pluginId, rule.getCapability(), accessType);
+                        log.debug("[{}] Granted permission: {} -> {}", pluginId, rule.getCapability(), accessType);
+                    } catch (IllegalArgumentException e) {
+                        log.warn("[{}] Invalid access type in permission config: {}", pluginId, rule.getAccessType());
+                    }
+                }
+            }
 
             eventBus.publish(new PluginInstalledEvent(pluginId, version));
             log.info("[{}] Installed successfully", pluginId);

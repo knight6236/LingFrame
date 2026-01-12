@@ -2,7 +2,11 @@ package com.lingframe.core.security;
 
 import com.lingframe.api.security.AccessType;
 import com.lingframe.api.security.PermissionService;
+import com.lingframe.core.audit.AuditManager;
 import com.lingframe.core.config.LingFrameConfig;
+import com.lingframe.core.event.EventBus;
+import com.lingframe.core.event.monitor.MonitoringEvents;
+import com.lingframe.core.monitor.TraceContext;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.Map;
@@ -14,6 +18,12 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 @Slf4j
 public class DefaultPermissionService implements PermissionService {
+
+    private final EventBus eventBus;
+
+    public DefaultPermissionService(EventBus eventBus) {
+        this.eventBus = eventBus;
+    }
 
     // 简单的权限表: Map<PluginId, Map<Capability, AccessType>>
     // 实际生产中应从数据库或配置文件加载
@@ -85,6 +95,16 @@ public class DefaultPermissionService implements PermissionService {
     public void grant(String pluginId, String capability, AccessType accessType) {
         permissions.computeIfAbsent(pluginId, k -> new ConcurrentHashMap<>())
                 .put(capability, accessType);
+        log.debug("Granted permission: plugin={}, capability={}, access={}", pluginId, capability, accessType);
+    }
+
+    @Override
+    public void revoke(String pluginId, String capability) {
+        Map<String, AccessType> pluginPerms = permissions.get(pluginId);
+        if (pluginPerms != null) {
+            pluginPerms.remove(capability);
+            log.debug("Revoked permission: plugin={}, capability={}", pluginId, capability);
+        }
     }
 
     @Override
@@ -94,12 +114,44 @@ public class DefaultPermissionService implements PermissionService {
 
     @Override
     public void audit(String pluginId, String capability, String operation, boolean allowed) {
-        // 简单日志，主要使用 AuditManager
-        // 桥接到 AuditManager，或者仅记录关键的安全日志
+        // 日志记录
         if (!allowed) {
             log.warn("[Security] Access Denied - Plugin: {}, Capability: {}, Operation: {}", pluginId, capability,
                     operation);
         }
+
+        // 优先从链路上下文获取 TraceId，保持追踪连贯性
+        String traceId = TraceContext.start();
+
+        // 1. 持久化审计记录 (异步写入日志/ES/DB)
+        AuditManager.asyncRecord(
+                traceId,
+                pluginId,
+                allowed ? "ALLOWED" : "DENIED",
+                capability,
+                new Object[] { truncateOperation(operation) },
+                allowed ? "Success" : "Denied",
+                0L);
+
+        // 2. 发布审计事件到 EventBus，供 Dashboard 实时展示
+        if (eventBus != null) {
+            eventBus.publish(new MonitoringEvents.AuditLogEvent(
+                    traceId,
+                    pluginId,
+                    allowed ? "ALLOWED" : "DENIED",
+                    capability + ":" + truncateOperation(operation),
+                    allowed,
+                    0L));
+        }
+    }
+
+    /**
+     * 截断过长的 SQL 语句
+     */
+    private String truncateOperation(String operation) {
+        if (operation == null)
+            return "";
+        return operation.length() > 80 ? operation.substring(0, 80) + "..." : operation;
     }
 
     /**

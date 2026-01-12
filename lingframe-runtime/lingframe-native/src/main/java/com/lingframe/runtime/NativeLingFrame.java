@@ -58,7 +58,7 @@ public class NativeLingFrame {
 
         List<GovernancePolicyProvider> providers = Collections.emptyList();
         // 准备核心组件
-        DefaultPermissionService permissionService = new DefaultPermissionService();
+        DefaultPermissionService permissionService = new DefaultPermissionService(eventBus);
         GovernanceArbitrator governanceArbitrator = new GovernanceArbitrator(providers);
         GovernanceKernel governanceKernel = new GovernanceKernel(permissionService, governanceArbitrator, eventBus);
         DefaultPluginLoaderFactory loaderFactory = new DefaultPluginLoaderFactory();

@@ -1,5 +1,6 @@
 package com.lingframe.dashboard.config;
 
+import com.lingframe.api.security.PermissionService;
 import com.lingframe.core.event.EventBus;
 import com.lingframe.core.governance.LocalGovernanceRegistry;
 import com.lingframe.core.kernel.GovernanceKernel;
@@ -21,12 +22,7 @@ import org.springframework.context.annotation.Bean;
 @AutoConfiguration
 @ConditionalOnWebApplication
 @ConditionalOnBean(PluginManager.class)
-@ConditionalOnProperty(
-        prefix = "lingframe.dashboard",
-        name = "enabled",
-        havingValue = "true",
-        matchIfMissing = false
-)
+@ConditionalOnProperty(prefix = "lingframe.dashboard", name = "enabled", havingValue = "true", matchIfMissing = false)
 public class DashboardAutoConfiguration {
 
     public DashboardAutoConfiguration() {
@@ -52,8 +48,10 @@ public class DashboardAutoConfiguration {
             PluginManager pluginManager,
             LocalGovernanceRegistry governanceRegistry,
             CanaryRouter canaryRouter,
-            PluginInfoConverter pluginInfoConverter) {
-        return new DashboardService(pluginManager, governanceRegistry, canaryRouter, pluginInfoConverter);
+            PluginInfoConverter pluginInfoConverter,
+            PermissionService permissionService) {
+        return new DashboardService(pluginManager, governanceRegistry, canaryRouter, pluginInfoConverter,
+                permissionService);
     }
 
     @Bean
