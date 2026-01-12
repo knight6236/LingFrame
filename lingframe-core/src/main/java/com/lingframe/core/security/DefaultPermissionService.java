@@ -57,9 +57,11 @@ public class DefaultPermissionService implements PermissionService {
 
     private boolean checkInternal(String pluginId, String capability, AccessType accessType) {
         Map<String, AccessType> pluginPerms = permissions.get(pluginId);
-        if (pluginPerms == null) return false;
+        if (pluginPerms == null)
+            return false;
         AccessType granted = pluginPerms.get(capability);
-        if (granted == null) return false;
+        if (granted == null)
+            return false;
 
         // 权限等级模型 - WRITE 包含 READ，EXECUTE 是最高级别
         // 权限级别: NONE < READ < WRITE < EXECUTE
@@ -95,7 +97,8 @@ public class DefaultPermissionService implements PermissionService {
         // 简单日志，主要使用 AuditManager
         // 桥接到 AuditManager，或者仅记录关键的安全日志
         if (!allowed) {
-            log.warn("[Security] Access Denied - Plugin: {}, Capability: {}, Operation: {}", pluginId, capability, operation);
+            log.warn("[Security] Access Denied - Plugin: {}, Capability: {}, Operation: {}", pluginId, capability,
+                    operation);
         }
     }
 
@@ -107,5 +110,10 @@ public class DefaultPermissionService implements PermissionService {
         if (permissions.remove(pluginId) != null) {
             log.debug("Removed permissions for plugin: {}", pluginId);
         }
+    }
+
+    @Override
+    public boolean isHostGovernanceEnabled() {
+        return LingFrameConfig.current().isHostGovernanceEnabled();
     }
 }

@@ -11,7 +11,7 @@ governance:
     # 对应 GovernancePolicy.PermissionRule 的字段
     - methodPattern: "storage:sql"   # 原 capability
       permissionId: "READ"           # 原 access
-    - methodPattern: "cache:redis"
+    - methodPattern: "cache:spring"
       permissionId: "WRITE"
 
 # --- 自定义扩展/依赖 (对应 Map<String, Object> properties) ---

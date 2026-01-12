@@ -174,6 +174,65 @@ lingframe-examples/
 
 详见 [模块开发指南](plugin-development.md)
 
+## 安全治理演示（Killer Feature）
+
+示例工程已内置了治理策略，你可以通过以下步骤体验 LingFrame 核心的**零信任治理**能力。
+
+### 1. 尝试非法写入（SQL 拦截）
+
+User 插件在配置文件 `plugin.yml` 中声明了对数据库的 `READ` 权限，但没有声明 `WRITE` 权限。
+
+调用创建用户接口（执行 INSERT SQL）：
+
+```bash
+curl -X POST "http://localhost:8888/user/createUser?name=Attacker&email=hacker@test.com"
+```
+
+**预期结果**：
+- HTTP 500 Internal Server Error
+- 观察控制台日志，可见核心拦截异常：
+
+```text
+c.l.core.exception.PermissionDeniedException: Plugin [user-plugin] requires [storage:sql] with [WRITE] access, but only allowed: [READ]
+```
+
+### 2. 体验缓存加速（Cache 代理）
+
+User 插件声明了 `cache:spring` 的 `WRITE` 权限。
+
+**第一次查询**（触发 SQL 查询并写入缓存）：
+
+```bash
+curl "http://localhost:8888/user/queryUser?userId=1"
+```
+
+观察日志：
+```text
+Executing SQL: SELECT * FROM t_user WHERE id = ?
+Cache PUT: users::1
+Audit: Plugin [user-plugin] accessed [storage:sql] (ALLOWED)
+```
+
+**第二次查询**（命中缓存，无 SQL）：
+
+```bash
+curl "http://localhost:8888/user/queryUser?userId=1"
+```
+
+观察日志：
+```text
+Cache HIT: users::1
+Audit: Plugin [user-plugin] accessed [cache:spring] (ALLOWED)
+```
+
+### 3. 【真实案例】连宿主初始化都会被拦截？
+
+在早期的版本中，LingFrame 甚至因为安全策略过于严格，拦截了 Spring Boot 启动时的 SQL 初始化脚本（`schema.sql`），抛出了 `Security Alert: SQL execution without PluginContext. SQL`。这从侧面证明了治理内核的**无死角覆盖**——即使是框架启动阶段的 I/O 操作也逃不过它的法眼。
+![alt text](images/启动初始化数据库脚本被拦截.png)
+> 现在的版本已针对宿主是否开启治理进行判断，确保开发者体验。
+
+---
+
 ## 下一步
 
 - [模块开发指南](plugin-development.md) - 学习如何开发业务模块

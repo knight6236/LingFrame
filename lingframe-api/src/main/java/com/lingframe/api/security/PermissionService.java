@@ -11,7 +11,7 @@ public interface PermissionService {
     /**
      * 检查插件是否有某项权限。
      * 
-     * @param pluginId 插件ID
+     * @param pluginId   插件ID
      * @param capability 能力标识，例如 "datasource", "redis"
      * @param accessType 访问类型，如 READ, WRITE
      * @return 如果允许访问则返回 true，否则返回 false
@@ -25,7 +25,8 @@ public interface PermissionService {
      * <p>
      * 注意：此方法返回的权限配置可能包含敏感信息，应谨慎使用，通常只供 Core 内部或特定管理工具使用。
      * </p>
-     * @param pluginId 插件ID
+     * 
+     * @param pluginId   插件ID
      * @param capability 能力标识
      * @return 权限配置对象，如果不存在则返回 null 或空对象
      */
@@ -35,12 +36,26 @@ public interface PermissionService {
     /**
      * 记录审计日志。
      * 
-     * @param pluginId 插件ID
+     * @param pluginId   插件ID
      * @param capability 能力标识
-     * @param operation 具体操作，例如 SQL 命令类型、Redis 方法名
-     * @param allowed 是否允许该操作
+     * @param operation  具体操作，例如 SQL 命令类型、Redis 方法名
+     * @param allowed    是否允许该操作
      */
     void audit(String pluginId, String capability, String operation, boolean allowed);
 
-    default void removePlugin(String pluginId) {}
+    default void removePlugin(String pluginId) {
+    }
+
+    /**
+     * 检查宿主治理是否启用。
+     * <p>
+     * 当返回 true 时，所有没有 PluginContext 的操作（宿主操作）也需要受到治理。
+     * 当返回 false（默认）时，宿主操作默认放行。
+     * </p>
+     * 
+     * @return 是否启用宿主治理
+     */
+    default boolean isHostGovernanceEnabled() {
+        return false; // 默认不启用
+    }
 }

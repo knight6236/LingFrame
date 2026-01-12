@@ -66,9 +66,15 @@ public class LingPreparedStatementProxy implements PreparedStatement {
         // 这里依赖我们在 Runtime 层实现的 ThreadLocal Holder
         String callerPluginId = PluginContextHolder.get();
         if (callerPluginId == null) {
-            // 上下文丢失，拒绝执行，防止绕过
-            log.error("Security Alert: SQL execution attempted without a valid PluginContext. SQL: {}", sql);
-            throw new SQLException("Security Error: Caller context not found. Access denied.");
+            // 检查是否启用了宿主治理
+            if (permissionService.isHostGovernanceEnabled()) {
+                // 宿主治理开启：拒绝无上下文的操作
+                log.error("Security Alert: SQL execution without PluginContext (Host governance ENABLED). SQL: {}", sql);
+                throw new SQLException("Access Denied: Host governance is enabled but no context provided.");
+            }
+            // 宿主治理关闭：默认放行 (Host Privilege)
+            log.debug("SQL execution without PluginContext (Host governance disabled). ALLOWED. SQL: {}", sql);
+            return;
         }
 
         // 2. 使用预解析的结果
