@@ -23,6 +23,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.lang.reflect.Method;
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 
 @Slf4j
@@ -32,14 +34,16 @@ public class SpringPluginContainer implements PluginContainer {
     private ConfigurableApplicationContext context;
     private final ClassLoader classLoader;
     private final WebInterfaceManager webInterfaceManager;
+    private final List<String> excludedPackages;
     // 保存 Context 以便 stop 时使用
     private PluginContext pluginContext;
 
     public SpringPluginContainer(SpringApplicationBuilder builder, ClassLoader classLoader,
-            WebInterfaceManager webInterfaceManager) {
+            WebInterfaceManager webInterfaceManager, List<String> excludedPackages) {
         this.builder = builder;
         this.classLoader = classLoader;
         this.webInterfaceManager = webInterfaceManager;
+        this.excludedPackages = excludedPackages != null ? excludedPackages : Collections.emptyList();
     }
 
     @Override
@@ -162,21 +166,34 @@ public class SpringPluginContainer implements PluginContainer {
     }
 
     /**
-     * 判断是否为业务接口（排除 Java/Spring/常见框架接口）
+     * 判断是否为业务接口（排除 Java/Spring/常见框架接口 + 用户配置排除项）
      */
     private boolean isBusinessInterface(Class<?> iface) {
         String name = iface.getName();
-        return !name.startsWith("java.") &&
-                !name.startsWith("javax.") &&
-                !name.startsWith("jakarta.") &&
-                !name.startsWith("org.springframework.") &&
-                !name.startsWith("org.slf4j.") &&
-                !name.startsWith("io.micrometer.") &&
-                !name.startsWith("com.zaxxer.") &&
-                !name.startsWith("lombok.") &&
-                !name.startsWith("com.lingframe.api.context.") &&
-                !name.startsWith("com.lingframe.api.plugin.") &&
-                !name.startsWith("com.lingframe.starter.");
+
+        // 内置排除规则
+        if (name.startsWith("java.") ||
+                name.startsWith("javax.") ||
+                name.startsWith("jakarta.") ||
+                name.startsWith("org.springframework.") ||
+                name.startsWith("org.slf4j.") ||
+                name.startsWith("io.micrometer.") ||
+                name.startsWith("com.zaxxer.") ||
+                name.startsWith("lombok.") ||
+                name.startsWith("com.lingframe.api.context.") ||
+                name.startsWith("com.lingframe.api.plugin.") ||
+                name.startsWith("com.lingframe.starter.")) {
+            return false;
+        }
+
+        // 用户配置的排除规则
+        for (String prefix : excludedPackages) {
+            if (name.startsWith(prefix)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**

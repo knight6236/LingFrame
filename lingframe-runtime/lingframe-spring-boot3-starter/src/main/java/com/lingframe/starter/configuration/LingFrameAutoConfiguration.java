@@ -274,10 +274,10 @@ public class LingFrameAutoConfiguration {
         return new CorePluginContext("host-app", pluginManager, permissionService, eventBus);
     }
 
-    // 注册 LingReference 注入器
+    // 注册 LingReference 注入器（懒加载 PluginManager，避免 BeanPostProcessor 警告）
     @Bean
-    public LingReferenceInjector lingReferenceInjector(PluginManager pluginManager) {
-        return new LingReferenceInjector("host-app", pluginManager);
+    public LingReferenceInjector lingReferenceInjector() {
+        return new LingReferenceInjector("host-app");
     }
 
     @Bean

@@ -63,6 +63,24 @@ public class LingFrameProperties {
     private List<String> pluginRoots = new ArrayList<>();
 
     /**
+     * 服务注册排除包前缀列表
+     * <p>
+     * 用于隐式接口服务注册时，排除不需要注册的第三方框架接口。
+     * 框架已内置常见排除规则（java.*, javax.*, io.micrometer.* 等），
+     * 此配置用于扩展自定义排除项。
+     * <p>
+     * 示例：
+     * 
+     * <pre>
+     * lingframe:
+     *   service-excluded-packages:
+     *     - com.custom.internal.
+     *     - org.thirdparty.
+     * </pre>
+     */
+    private List<String> serviceExcludedPackages = new ArrayList<>();
+
+    /**
      * 宿主治理配置
      */
     @Valid

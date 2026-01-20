@@ -101,32 +101,55 @@ public class HostBeanGovernanceProcessor implements BeanPostProcessor, Applicati
     @Override
     public void setApplicationContext(@NonNull ApplicationContext applicationContext) throws BeansException {
         this.applicationContext = applicationContext;
-        // 延迟获取核心组件，确保 ApplicationContext 已经准备好
-        try {
-            this.governanceKernel = applicationContext.getBean(GovernanceKernel.class);
-            this.properties = applicationContext.getBean(LingFrameProperties.class);
-        } catch (Exception e) {
-            log.error("Failed to get core beans for governance", e);
+        // 不在这里获取 Bean，避免过早初始化导致 BeanPostProcessor 警告
+    }
+
+    /**
+     * 懒加载获取 GovernanceKernel
+     */
+    private GovernanceKernel getGovernanceKernel() {
+        if (governanceKernel == null && applicationContext != null) {
+            try {
+                governanceKernel = applicationContext.getBean(GovernanceKernel.class);
+            } catch (Exception e) {
+                log.debug("GovernanceKernel not available yet");
+            }
         }
+        return governanceKernel;
+    }
+
+    /**
+     * 懒加载获取 LingFrameProperties
+     */
+    private LingFrameProperties getProperties() {
+        if (properties == null && applicationContext != null) {
+            try {
+                properties = applicationContext.getBean(LingFrameProperties.class);
+            } catch (Exception e) {
+                log.debug("LingFrameProperties not available yet");
+            }
+        }
+        return properties;
     }
 
     @Override
     public Object postProcessAfterInitialization(@NonNull Object bean, @NonNull String beanName) throws BeansException {
+        // 懒加载获取核心组件
+        GovernanceKernel kernel = getGovernanceKernel();
+        LingFrameProperties props = getProperties();
+
         // 如果核心组件未准备好，直接返回
-        if (governanceKernel == null || properties == null) {
-            log.debug("GovernanceKernel or Properties not ready, skipping bean: {}", beanName);
+        if (kernel == null || props == null) {
             return bean;
         }
 
         // 检查是否启用了宿主 Bean 治理
-        if (!properties.getHostGovernance().isEnabled()) {
-            log.debug("Host governance is disabled, skipping bean: {}", beanName);
+        if (!props.getHostGovernance().isEnabled()) {
             return bean;
         }
 
         // 检查是否需要拦截
         boolean shouldGovern = shouldGovern(bean, beanName);
-        log.debug("Checking bean: {} ({}), shouldGovern: {}", beanName, bean.getClass().getSimpleName(), shouldGovern);
         if (!shouldGovern) {
             return bean;
         }
@@ -136,9 +159,9 @@ public class HostBeanGovernanceProcessor implements BeanPostProcessor, Applicati
             ProxyFactory proxyFactory = new ProxyFactory(bean);
             proxyFactory.setProxyTargetClass(true); // 强制使用 CGLIB
             proxyFactory.addAdvice(new HostBeanGovernanceInterceptor(
-                    governanceKernel,
-                    properties.getHostGovernance().isGovernInternalCalls(),
-                    properties.getHostGovernance().isCheckPermissions()));
+                    kernel,
+                    props.getHostGovernance().isGovernInternalCalls(),
+                    props.getHostGovernance().isCheckPermissions()));
             Object proxy = proxyFactory.getProxy();
             log.info("[Governance] Successfully governed host bean: {} ({})", beanName,
                     bean.getClass().getSimpleName());

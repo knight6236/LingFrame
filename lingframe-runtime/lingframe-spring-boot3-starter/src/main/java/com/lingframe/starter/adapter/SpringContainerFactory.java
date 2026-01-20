@@ -15,6 +15,7 @@ import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.core.io.DefaultResourceLoader;
 
 import java.io.File;
+import java.util.List;
 
 @Slf4j
 public class SpringContainerFactory implements ContainerFactory {
@@ -22,10 +23,13 @@ public class SpringContainerFactory implements ContainerFactory {
     private final ApplicationContext parentContext;
     private final boolean devMode;
     private final WebInterfaceManager webInterfaceManager;
+    private final List<String> serviceExcludedPackages;
 
     public SpringContainerFactory(ApplicationContext parentContext, WebInterfaceManager webInterfaceManager) {
         this.parentContext = parentContext;
-        this.devMode = parentContext.getBean(LingFrameProperties.class).isDevMode();
+        LingFrameProperties props = parentContext.getBean(LingFrameProperties.class);
+        this.devMode = props.isDevMode();
+        this.serviceExcludedPackages = props.getServiceExcludedPackages();
         this.webInterfaceManager = webInterfaceManager;
     }
 
@@ -46,7 +50,7 @@ public class SpringContainerFactory implements ContainerFactory {
                     .properties("spring.main.allow-bean-definition-overriding=true") // 允许覆盖 Bean
                     .properties("spring.application.name=plugin-" + pluginId); // 独立应用名
 
-            return new SpringPluginContainer(builder, classLoader, webInterfaceManager);
+            return new SpringPluginContainer(builder, classLoader, webInterfaceManager, serviceExcludedPackages);
 
         } catch (Exception e) {
             log.error("[{}] Create container failed", pluginId, e);

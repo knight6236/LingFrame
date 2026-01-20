@@ -3,34 +3,68 @@ package com.lingframe.starter.processor;
 import com.lingframe.api.annotation.LingReference;
 import com.lingframe.core.plugin.PluginManager;
 import lombok.NonNull;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.config.BeanPostProcessor;
+import org.springframework.context.ApplicationContext;
+import org.springframework.context.ApplicationContextAware;
 import org.springframework.util.ReflectionUtils;
 
 import java.lang.reflect.Field;
 
 @Slf4j
-@RequiredArgsConstructor
-public class LingReferenceInjector implements BeanPostProcessor {
+public class LingReferenceInjector implements BeanPostProcessor, ApplicationContextAware {
 
-    private final String currentPluginId; // 🔥记录当前环境的插件ID
+    private final String currentPluginId; // 记录当前环境的插件ID
+    private ApplicationContext applicationContext;
+    private PluginManager pluginManager; // 懒加载
 
-    private final PluginManager pluginManager;
+    public LingReferenceInjector(String currentPluginId) {
+        this.currentPluginId = currentPluginId;
+    }
+
+    // 兼容旧构造函数（插件内部使用）
+    public LingReferenceInjector(String currentPluginId, PluginManager pluginManager) {
+        this.currentPluginId = currentPluginId;
+        this.pluginManager = pluginManager;
+    }
+
+    @Override
+    public void setApplicationContext(@NonNull ApplicationContext applicationContext) throws BeansException {
+        this.applicationContext = applicationContext;
+    }
+
+    /**
+     * 懒加载获取 PluginManager
+     */
+    private PluginManager getPluginManager() {
+        if (pluginManager == null && applicationContext != null) {
+            try {
+                pluginManager = applicationContext.getBean(PluginManager.class);
+            } catch (Exception e) {
+                log.debug("PluginManager not available yet");
+            }
+        }
+        return pluginManager;
+    }
 
     /**
      * 确保在 AOP 代理创建之前，把属性注入到原始对象(Target)中。
      */
     @Override
     public Object postProcessBeforeInitialization(Object bean, @NonNull String beanName) throws BeansException {
+        PluginManager pm = getPluginManager();
+        if (pm == null) {
+            return bean; // PluginManager 未准备好，跳过
+        }
+
         Class<?> clazz = bean.getClass();
 
         // 递归处理所有字段 (包括父类)
         ReflectionUtils.doWithFields(clazz, field -> {
             LingReference annotation = field.getAnnotation(LingReference.class);
             if (annotation != null) {
-                injectService(bean, field, annotation);
+                injectService(bean, field, annotation, pm);
             }
         });
 
@@ -43,7 +77,7 @@ public class LingReferenceInjector implements BeanPostProcessor {
         return bean;
     }
 
-    private void injectService(Object bean, Field field, LingReference annotation) {
+    private void injectService(Object bean, Field field, LingReference annotation, PluginManager pm) {
         try {
             field.setAccessible(true);
 
@@ -59,11 +93,10 @@ public class LingReferenceInjector implements BeanPostProcessor {
             String callerId = (currentPluginId != null) ? currentPluginId : "host-app";
 
             // 创建全局路由代理
-            Object proxy = pluginManager.getGlobalServiceProxy(
+            Object proxy = pm.getGlobalServiceProxy(
                     callerId,
                     serviceType,
-                    targetPluginId
-            );
+                    targetPluginId);
             field.set(bean, proxy);
             log.info("Injected @LingReference for field: {}.{}",
                     bean.getClass().getSimpleName(), field.getName());
