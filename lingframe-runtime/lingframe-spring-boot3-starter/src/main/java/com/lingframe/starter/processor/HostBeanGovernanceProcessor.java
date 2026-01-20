@@ -13,10 +13,8 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
 import org.springframework.stereotype.Component;
-import org.springframework.stereotype.Controller;
 import org.springframework.stereotype.Repository;
 import org.springframework.stereotype.Service;
-import org.springframework.web.bind.annotation.RestController;
 
 import java.lang.annotation.Annotation;
 import java.util.Arrays;
@@ -36,14 +34,11 @@ public class HostBeanGovernanceProcessor implements BeanPostProcessor, Applicati
     private GovernanceKernel governanceKernel;
     private LingFrameProperties properties;
 
-    // 需要被拦截的注解类型
+    // 需要被拦截的注解类型（排除 Controller/RestController，由 LingWebGovernanceInterceptor 处理）
     private static final Set<Class<? extends Annotation>> GOVERNANCE_ANNOTATIONS = new HashSet<>(Arrays.asList(
             Service.class,
             Component.class,
-            Controller.class,
-            Repository.class,
-            RestController.class
-    ));
+            Repository.class));
 
     // 不需要拦截的 Bean 名称前缀
     private static final Set<String> EXCLUDED_BEAN_PREFIXES = new HashSet<>(Arrays.asList(
@@ -101,8 +96,7 @@ public class HostBeanGovernanceProcessor implements BeanPostProcessor, Applicati
             "metrics",
             "health",
             "info",
-            "prometheus"
-    ));
+            "prometheus"));
 
     @Override
     public void setApplicationContext(@NonNull ApplicationContext applicationContext) throws BeansException {
@@ -142,12 +136,12 @@ public class HostBeanGovernanceProcessor implements BeanPostProcessor, Applicati
             ProxyFactory proxyFactory = new ProxyFactory(bean);
             proxyFactory.setProxyTargetClass(true); // 强制使用 CGLIB
             proxyFactory.addAdvice(new HostBeanGovernanceInterceptor(
-                governanceKernel,
-                properties.getHostGovernance().isGovernInternalCalls(),
-                properties.getHostGovernance().isCheckPermissions()
-            ));
+                    governanceKernel,
+                    properties.getHostGovernance().isGovernInternalCalls(),
+                    properties.getHostGovernance().isCheckPermissions()));
             Object proxy = proxyFactory.getProxy();
-            log.info("[Governance] Successfully governed host bean: {} ({})", beanName, bean.getClass().getSimpleName());
+            log.info("[Governance] Successfully governed host bean: {} ({})", beanName,
+                    bean.getClass().getSimpleName());
             return proxy;
         } catch (Exception e) {
             log.error("Failed to create governance proxy for bean: {}", beanName, e);
@@ -156,7 +150,8 @@ public class HostBeanGovernanceProcessor implements BeanPostProcessor, Applicati
     }
 
     @Override
-    public Object postProcessBeforeInitialization(@NonNull Object bean, @NonNull String beanName) throws BeansException {
+    public Object postProcessBeforeInitialization(@NonNull Object bean, @NonNull String beanName)
+            throws BeansException {
         return bean;
     }
 

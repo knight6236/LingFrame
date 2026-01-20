@@ -1,8 +1,8 @@
 package com.lingframe.starter.web;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.util.AntPathMatcher;
 import org.springframework.web.bind.annotation.RequestMethod;
+import org.springframework.web.method.HandlerMethod;
 import org.springframework.web.servlet.mvc.method.RequestMappingInfo;
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 
@@ -13,126 +13,153 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Web 接口动态管理器
+ * Web 接口动态管理器（原生注册版）
  * 职责：
- * 1. 动态将插件的 URL 注册到宿主 Spring MVC
- * 2. 处理精确/模糊路由匹配
+ * 1. 将插件 Controller 方法直接注册到宿主 Spring MVC
+ * 2. 维护 HandlerMethod -> Metadata 映射，供 Interceptor 查询
  * 3. 插件卸载时彻底清理路由，防止内存泄漏
  */
 @Slf4j
 public class WebInterfaceManager {
 
-    private static WebInterfaceManager INSTANCE;
+    // HandlerMethod 标识 -> 元数据映射
+    private final Map<String, WebInterfaceMetadata> metadataMap = new ConcurrentHashMap<>();
 
-    // 拆分 Exact Map 和 Ant Pattern Map
-    private final Map<String, WebInterfaceMetadata> exactRouteMap = new ConcurrentHashMap<>();
-    private final Map<String, WebInterfaceMetadata> antPatternMap = new ConcurrentHashMap<>();
-    private final Map<String, WebInterfaceMetadata> routeMap = new ConcurrentHashMap<>();
-    private final AntPathMatcher pathMatcher = new AntPathMatcher();
+    // 路由键 -> RequestMappingInfo 映射（用于卸载）
+    private final Map<String, RequestMappingInfo> mappingInfoMap = new ConcurrentHashMap<>();
 
     private RequestMappingHandlerMapping hostMapping;
-    private Object proxyController;
-    private Method proxyMethod;
 
-    public WebInterfaceManager() {
-        INSTANCE = this;
-    }
-
-    public static WebInterfaceManager getInstance() {
-        return INSTANCE;
-    }
-
-    // 初始化方法，由 AutoConfiguration 调用
-    public void init(RequestMappingHandlerMapping mapping, Object controller, Method method) {
+    /**
+     * 初始化方法，由 AutoConfiguration 调用
+     */
+    public void init(RequestMappingHandlerMapping mapping) {
         this.hostMapping = mapping;
-        this.proxyController = controller;
-        this.proxyMethod = method;
+        log.info("🌍 [LingFrame Web] WebInterfaceManager initialized with native registration");
     }
 
+    /**
+     * 注册插件 Controller 方法到 Spring MVC
+     */
     public void register(WebInterfaceMetadata metadata) {
         if (hostMapping == null) {
             log.warn("WebInterfaceManager not initialized, skipping registration: {}", metadata.getUrlPattern());
             return;
         }
 
-        String url = metadata.getUrlPattern();
-        routeMap.put(url, metadata);
+        String routeKey = buildRouteKey(metadata);
 
-        // 拆分存储
-        if (url.contains("*") || url.contains("?") || url.contains("{")) {
-            antPatternMap.put(url, metadata);
-        } else {
-            exactRouteMap.put(url, metadata);
+        // 检查路由冲突
+        if (metadataMap.containsKey(routeKey)) {
+            log.warn("⚠️ [LingFrame Web] Route conflict detected, overwriting: {} [{}]",
+                    metadata.getHttpMethod(), metadata.getUrlPattern());
         }
 
         try {
-            // 动态注册到宿主 Spring MVC
+            // 构建 RequestMappingInfo
             RequestMappingInfo info = RequestMappingInfo
-                    .paths(url)
+                    .paths(metadata.getUrlPattern())
                     .methods(RequestMethod.valueOf(metadata.getHttpMethod()))
                     .build();
 
-            // 核心魔法：将所有插件 URL 映射到同一个 Proxy 方法上
-            hostMapping.registerMapping(info, proxyController, proxyMethod);
+            // 直接注册插件 Controller Bean 和 Method 到 Spring MVC
+            hostMapping.registerMapping(info, metadata.getTargetBean(), metadata.getTargetMethod());
 
-            log.info("🌍 [LingFrame Web] Mapped: {} -> {}.{}", url, metadata.getPluginId(), metadata.getTargetMethod().getName());
+            // 存储映射关系
+            metadataMap.put(routeKey, metadata);
+            mappingInfoMap.put(routeKey, info);
+
+            log.info("🌍 [LingFrame Web] Registered: {} {} -> {}.{}",
+                    metadata.getHttpMethod(), metadata.getUrlPattern(),
+                    metadata.getPluginId(), metadata.getTargetMethod().getName());
         } catch (Exception e) {
-            log.error("Failed to register web mapping: {}", url, e);
+            log.error("Failed to register web mapping: {} {}", metadata.getHttpMethod(), metadata.getUrlPattern(), e);
         }
     }
 
     /**
      * 注销插件的所有接口
-     * 解决内存泄漏和路由冲突的关键
      */
     public void unregister(String pluginId) {
-        if (hostMapping == null) return;
+        if (hostMapping == null)
+            return;
 
         log.info("♻️ [LingFrame Web] Unregistering interfaces for plugin: {}", pluginId);
 
-        //  找出该插件所有的 URL
-        List<String> urlsToRemove = new ArrayList<>();
-        routeMap.forEach((url, meta) -> {
-            if (meta.getPluginId().equals(pluginId)) {
-                urlsToRemove.add(url);
+        List<String> keysToRemove = new ArrayList<>();
 
-                // 从 Spring MVC 核心中注销路由
-                try {
-                    RequestMappingInfo info = buildMappingInfo(url, meta.getHttpMethod());
-                    hostMapping.unregisterMapping(info);
-                } catch (Exception e) {
-                    log.warn("Failed to unregister spring mapping for: {}", url, e);
+        metadataMap.forEach((key, meta) -> {
+            if (meta.getPluginId().equals(pluginId)) {
+                keysToRemove.add(key);
+
+                // 从 Spring MVC 注销
+                RequestMappingInfo info = mappingInfoMap.get(key);
+                if (info != null) {
+                    try {
+                        hostMapping.unregisterMapping(info);
+                        log.debug("Unregistered mapping: {}", key);
+                    } catch (Exception e) {
+                        log.warn("Failed to unregister mapping: {}", key, e);
+                    }
                 }
             }
         });
 
-        // 从本地缓存中移除
-        for (String url : urlsToRemove) {
-            routeMap.remove(url);
-            exactRouteMap.remove(url);
-            antPatternMap.remove(url);
+        // 清理本地缓存
+        for (String key : keysToRemove) {
+            metadataMap.remove(key);
+            mappingInfoMap.remove(key);
         }
+
+        log.info("♻️ [LingFrame Web] Unregistered {} interfaces for plugin: {}", keysToRemove.size(), pluginId);
     }
 
-    public WebInterfaceMetadata match(String path) {
-        // 优先走精确匹配（ConcurrentHashMap.get 是 O(1)）
-        WebInterfaceMetadata meta = exactRouteMap.get(path);
-        if (meta != null) return meta;
+    /**
+     * 根据 HandlerMethod 获取元数据
+     * 供 LingWebGovernanceInterceptor 调用
+     */
+    public WebInterfaceMetadata getMetadata(HandlerMethod handlerMethod) {
+        // 通过 Bean 和 Method 构建查找键
+        Object bean = handlerMethod.getBean();
+        Method method = handlerMethod.getMethod();
 
-        // 只有没匹配到，才遍历 Ant Pattern Map (O(N))
-        // 通常 Ant Pattern 的数量远少于总接口数
-        for (Map.Entry<String, WebInterfaceMetadata> entry : antPatternMap.entrySet()) {
-            if (pathMatcher.match(entry.getKey(), path)) {
-                return entry.getValue();
+        // 遍历查找匹配的元数据
+        for (WebInterfaceMetadata meta : metadataMap.values()) {
+            if (isSameHandler(meta, bean, method)) {
+                return meta;
             }
         }
         return null;
     }
 
-    private RequestMappingInfo buildMappingInfo(String url, String httpMethod) {
-        return RequestMappingInfo
-                .paths(url)
-                .methods(RequestMethod.valueOf(httpMethod))
-                .build();
+    /**
+     * 判断是否是同一个处理器
+     */
+    private boolean isSameHandler(WebInterfaceMetadata meta, Object bean, Method method) {
+        // 比较 Bean 实例和方法签名
+        if (meta.getTargetBean() == bean) {
+            return meta.getTargetMethod().equals(method);
+        }
+        // 处理代理情况：比较方法名和参数类型
+        if (meta.getTargetMethod().getName().equals(method.getName())) {
+            Class<?>[] metaParams = meta.getTargetMethod().getParameterTypes();
+            Class<?>[] methodParams = method.getParameterTypes();
+            if (metaParams.length == methodParams.length) {
+                for (int i = 0; i < metaParams.length; i++) {
+                    if (!metaParams[i].equals(methodParams[i])) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 构建路由键：httpMethod#urlPattern
+     */
+    private String buildRouteKey(WebInterfaceMetadata metadata) {
+        return metadata.getHttpMethod() + "#" + metadata.getUrlPattern();
     }
 }

@@ -26,13 +26,12 @@ import com.lingframe.infra.cache.configuration.SpringCacheWrapperProcessor;
 import com.lingframe.infra.storage.configuration.DataSourceWrapperProcessor;
 import com.lingframe.starter.adapter.SpringContainerFactory;
 import com.lingframe.starter.config.LingFrameProperties;
+import com.lingframe.starter.interceptor.LingWebGovernanceInterceptor;
 import com.lingframe.starter.processor.HostBeanGovernanceProcessor;
 import com.lingframe.starter.processor.LingReferenceInjector;
-import com.lingframe.starter.web.LingWebProxyController;
 import com.lingframe.starter.web.WebInterfaceManager;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
+import org.jspecify.annotations.NonNull;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.ApplicationRunner;
@@ -45,9 +44,10 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.event.ContextRefreshedEvent;
+import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 
-import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -134,8 +134,9 @@ public class LingFrameAutoConfiguration {
     }
 
     @Bean
-    public ContainerFactory containerFactory(ApplicationContext parentContext) {
-        return new SpringContainerFactory(parentContext);
+    public ContainerFactory containerFactory(ApplicationContext parentContext,
+            WebInterfaceManager webInterfaceManager) {
+        return new SpringContainerFactory(parentContext, webInterfaceManager);
     }
 
     @Bean
@@ -285,28 +286,31 @@ public class LingFrameAutoConfiguration {
     }
 
     @Bean
-    public LingWebProxyController lingWebProxyController(WebInterfaceManager manager, PluginManager pluginManager,
-            GovernanceKernel governanceKernel) {
-        return new LingWebProxyController(manager, pluginManager, governanceKernel);
+    public LingWebGovernanceInterceptor lingWebGovernanceInterceptor(
+            PermissionService permissionService,
+            WebInterfaceManager webInterfaceManager,
+            LingFrameProperties properties,
+            EventBus eventBus) {
+        return new LingWebGovernanceInterceptor(permissionService, webInterfaceManager, properties, eventBus);
+    }
+
+    @Bean
+    public WebMvcConfigurer lingWebMvcConfigurer(LingWebGovernanceInterceptor interceptor) {
+        return new WebMvcConfigurer() {
+            @Override
+            public void addInterceptors(@NonNull InterceptorRegistry registry) {
+                registry.addInterceptor(interceptor);
+            }
+        };
     }
 
     @Bean
     public ApplicationListener<ContextRefreshedEvent> lingWebInitializer(
             WebInterfaceManager manager,
-            LingWebProxyController controller,
             @Qualifier("requestMappingHandlerMapping") RequestMappingHandlerMapping hostMapping) {
         return event -> {
             if (event.getApplicationContext().getParent() == null) { // 仅 Host 容器执行
-                try {
-                    // 获取 dispatch 方法反射对象
-                    Method method = LingWebProxyController.class.getMethod(
-                            "dispatch", HttpServletRequest.class, HttpServletResponse.class);
-
-                    manager.init(hostMapping, controller, method);
-
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
+                manager.init(hostMapping);
             }
         };
     }

@@ -5,6 +5,7 @@ import com.lingframe.core.spi.ContainerFactory;
 import com.lingframe.core.spi.PluginContainer;
 import com.lingframe.starter.config.LingFrameProperties;
 import com.lingframe.starter.util.AsmMainClassScanner;
+import com.lingframe.starter.web.WebInterfaceManager;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.Banner;
 import org.springframework.boot.WebApplicationType;
@@ -20,10 +21,12 @@ public class SpringContainerFactory implements ContainerFactory {
 
     private final ApplicationContext parentContext;
     private final boolean devMode;
+    private final WebInterfaceManager webInterfaceManager;
 
-    public SpringContainerFactory(ApplicationContext parentContext) {
+    public SpringContainerFactory(ApplicationContext parentContext, WebInterfaceManager webInterfaceManager) {
         this.parentContext = parentContext;
         this.devMode = parentContext.getBean(LingFrameProperties.class).isDevMode();
+        this.webInterfaceManager = webInterfaceManager;
     }
 
     @Override
@@ -43,7 +46,7 @@ public class SpringContainerFactory implements ContainerFactory {
                     .properties("spring.main.allow-bean-definition-overriding=true") // 允许覆盖 Bean
                     .properties("spring.application.name=plugin-" + pluginId); // 独立应用名
 
-            return new SpringPluginContainer(builder, classLoader);
+            return new SpringPluginContainer(builder, classLoader, webInterfaceManager);
 
         } catch (Exception e) {
             log.error("[{}] Create container failed", pluginId, e);
