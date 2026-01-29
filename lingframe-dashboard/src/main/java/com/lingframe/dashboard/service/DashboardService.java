@@ -1,5 +1,6 @@
 package com.lingframe.dashboard.service;
 
+import com.lingframe.api.config.GovernancePolicy;
 import com.lingframe.api.config.PluginDefinition;
 import com.lingframe.api.security.AccessType;
 import com.lingframe.api.security.Capabilities;
@@ -22,8 +23,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.File;
-import java.util.List;
-import java.util.Objects;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -40,7 +40,10 @@ public class DashboardService {
         return pluginManager.getInstalledPlugins().stream()
                 .map(pluginManager::getRuntime)
                 .filter(Objects::nonNull)
-                .map(runtime -> converter.toDTO(runtime, canaryRouter, permissionService))
+                .map(runtime -> {
+                    GovernancePolicy policy = getEffectivePolicy(runtime.getPluginId());
+                    return converter.toDTO(runtime, canaryRouter, permissionService, policy);
+                })
                 .collect(Collectors.toList());
     }
 
@@ -49,7 +52,23 @@ public class DashboardService {
         if (runtime == null) {
             return null;
         }
-        return converter.toDTO(runtime, canaryRouter, permissionService);
+        GovernancePolicy policy = getEffectivePolicy(pluginId);
+        return converter.toDTO(runtime, canaryRouter, permissionService, policy);
+    }
+
+    private GovernancePolicy getEffectivePolicy(String pluginId) {
+        // 优先获取动态补丁
+        GovernancePolicy policy = governanceRegistry.getPatch(pluginId);
+        if (policy != null) {
+            return policy;
+        }
+        // 降级使用静态定义
+        PluginRuntime runtime = pluginManager.getRuntime(pluginId);
+        if (runtime != null && runtime.getInstancePool().getDefault() != null
+                && runtime.getInstancePool().getDefault().getDefinition() != null) {
+            return runtime.getInstancePool().getDefault().getDefinition().getGovernance();
+        }
+        return null; // 无策略
     }
 
     public PluginInfoDTO installPlugin(File file) {
@@ -109,23 +128,22 @@ public class DashboardService {
                     log.info("[Dashboard] 初始化插件默认权限配置: {}", pluginId);
 
                     // 创建默认权限配置（全部开启）
-                    java.util.List<com.lingframe.api.config.GovernancePolicy.CapabilityRule> defaultCapabilities = java.util.Arrays
-                            .asList(
-                                    com.lingframe.api.config.GovernancePolicy.CapabilityRule.builder()
-                                            .capability(Capabilities.STORAGE_SQL)
-                                            .accessType(AccessType.WRITE.name())
-                                            .build(),
-                                    com.lingframe.api.config.GovernancePolicy.CapabilityRule.builder()
-                                            .capability(Capabilities.CACHE_LOCAL)
-                                            .accessType(AccessType.WRITE.name())
-                                            .build(),
-                                    com.lingframe.api.config.GovernancePolicy.CapabilityRule.builder()
-                                            .capability(Capabilities.PLUGIN_ENABLE)
-                                            .accessType(AccessType.EXECUTE.name())
-                                            .build());
+                    List<GovernancePolicy.CapabilityRule> defaultCapabilities = Arrays.asList(
+                            GovernancePolicy.CapabilityRule.builder()
+                                    .capability(Capabilities.STORAGE_SQL)
+                                    .accessType(AccessType.WRITE.name())
+                                    .build(),
+                            GovernancePolicy.CapabilityRule.builder()
+                                    .capability(Capabilities.CACHE_LOCAL)
+                                    .accessType(AccessType.WRITE.name())
+                                    .build(),
+                            GovernancePolicy.CapabilityRule.builder()
+                                    .capability(Capabilities.PLUGIN_ENABLE)
+                                    .accessType(AccessType.EXECUTE.name())
+                                    .build());
 
                     if (policy == null) {
-                        policy = new com.lingframe.api.config.GovernancePolicy();
+                        policy = new GovernancePolicy();
                     }
                     policy.setCapabilities(defaultCapabilities);
                     governanceRegistry.updatePatch(pluginId, policy);
@@ -214,25 +232,59 @@ public class DashboardService {
         // 3. 同步到治理策略并持久化
         var policy = governanceRegistry.getPatch(pluginId);
         if (policy == null) {
-            policy = new com.lingframe.api.config.GovernancePolicy();
+            policy = new GovernancePolicy();
         }
 
-        // 构建 capabilities 列表
-        java.util.List<com.lingframe.api.config.GovernancePolicy.CapabilityRule> capabilities = java.util.Arrays.asList(
-                com.lingframe.api.config.GovernancePolicy.CapabilityRule.builder()
-                        .capability(Capabilities.STORAGE_SQL)
-                        .accessType(sqlAccess.name())
-                        .build(),
-                com.lingframe.api.config.GovernancePolicy.CapabilityRule.builder()
-                        .capability(Capabilities.CACHE_LOCAL)
-                        .accessType(cacheAccess.name())
-                        .build(),
-                com.lingframe.api.config.GovernancePolicy.CapabilityRule.builder()
-                        .capability(Capabilities.PLUGIN_ENABLE)
-                        .accessType(AccessType.EXECUTE.name())
-                        .build());
+        // 构建/合并 capabilities 列表
+        Map<String, GovernancePolicy.CapabilityRule> ruleMap = new HashMap<>();
 
-        policy.setCapabilities(capabilities);
+        // 1. 加载现有规则
+        if (policy.getCapabilities() != null) {
+            for (GovernancePolicy.CapabilityRule rule : policy.getCapabilities()) {
+                ruleMap.put(rule.getCapability(), rule);
+            }
+        }
+
+        // 2. 更新或添加受管规则 (SQL/Cache/Enable)
+        ruleMap.put(Capabilities.STORAGE_SQL, GovernancePolicy.CapabilityRule.builder()
+                .capability(Capabilities.STORAGE_SQL)
+                .accessType(sqlAccess.name())
+                .build());
+        ruleMap.put(Capabilities.CACHE_LOCAL, GovernancePolicy.CapabilityRule.builder()
+                .capability(Capabilities.CACHE_LOCAL)
+                .accessType(cacheAccess.name())
+                .build());
+        ruleMap.put(Capabilities.PLUGIN_ENABLE, GovernancePolicy.CapabilityRule.builder()
+                .capability(Capabilities.PLUGIN_ENABLE)
+                .accessType(AccessType.EXECUTE.name())
+                .build());
+
+        // 3. 处理 IPC 权限更新 (如果前端传递了 ipcServices)
+        if (dto.getIpcServices() != null) {
+            // 先清理旧的 IPC 权限 (假定前端发来的是全量 IPC 列表)
+            // 先找出所有 key，避免并发修改异常
+            List<String> toRemove = new ArrayList<>();
+            for (String key : ruleMap.keySet()) {
+                if (key.startsWith("ipc:")) {
+                    toRemove.add(key);
+                }
+            }
+            toRemove.forEach(ruleMap::remove);
+
+            // 添加新的 IPC 权限
+            for (String targetPluginId : dto.getIpcServices()) {
+                String capability = "ipc:" + targetPluginId;
+                ruleMap.put(capability, GovernancePolicy.CapabilityRule.builder()
+                        .capability(capability)
+                        .accessType(AccessType.EXECUTE.name()) // IPC 默认为 EXECUTE
+                        .build());
+                // 同时授权到运行时
+                permissionService.grant(pluginId, capability, AccessType.EXECUTE);
+            }
+        }
+
+        // 4. 设置回策略
+        policy.setCapabilities(new ArrayList<>(ruleMap.values()));
         governanceRegistry.updatePatch(pluginId, policy);
 
         log.info("权限更新完成并已持久化");

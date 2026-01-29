@@ -94,6 +94,16 @@ createApp({
                 const data = await res.json();
                 if (!data.success) throw new Error(data.message);
                 return data.data;
+            },
+            async delete(path, body = {}) {
+                const res = await fetch(API_BASE + path, {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                const data = await res.json();
+                if (!data.success) throw new Error(data.message);
+                return data.data;
             }
         };
 
@@ -127,6 +137,9 @@ createApp({
             if (otherPlugin) {
                 ipcTarget.value = otherPlugin.pluginId;
             }
+
+            // 同步 IPC 开关状态
+            syncIpcSwitch();
         };
 
         const updateStatus = async (newStatus) => {
@@ -154,7 +167,7 @@ createApp({
             modal.onConfirm = async () => {
                 modal.loading = true;
                 try {
-                    await api.post(`/plugins/uninstall/${activeId.value}`);
+                    await api.delete(`/plugins/uninstall/${activeId.value}`);
                     plugins.value = plugins.value.filter(p => p.pluginId !== activeId.value);
                     activeId.value = null;
                     showToast('插件已卸载', 'success');
@@ -210,6 +223,7 @@ createApp({
                 dbWrite: currentPerms.dbWrite !== false,
                 cacheRead: currentPerms.cacheRead !== false,
                 cacheWrite: currentPerms.cacheWrite !== false,
+                ipcServices: currentPerms.ipcServices || [],
                 [perm]: newValue
             };
 
@@ -264,6 +278,62 @@ createApp({
             } catch (e) {
                 showToast('权限更新失败: ' + e.message, 'error');
                 console.error('权限更新失败:', e);
+            } finally {
+                loading.permissions = false;
+            }
+        };
+
+        const syncIpcSwitch = () => {
+            if (!activePlugin.value || !ipcTarget.value) {
+                ipcEnabled.value = false;
+                return;
+            }
+            const currentPerms = activePlugin.value.permissions || {};
+            const services = currentPerms.ipcServices || [];
+            ipcEnabled.value = services.includes(ipcTarget.value);
+        };
+
+        const toggleIpc = async () => {
+            if (!activePlugin.value || !ipcTarget.value) return;
+
+            // 切换状态
+            const newValue = !ipcEnabled.value;
+            const currentPerms = activePlugin.value.permissions || {};
+            const currentServices = currentPerms.ipcServices || [];
+
+            // 更新服务列表
+            let newServices;
+            if (newValue) {
+                // 添加当前 target
+                newServices = [...new Set([...currentServices, ipcTarget.value])];
+            } else {
+                // 移除当前 target
+                newServices = currentServices.filter(s => s !== ipcTarget.value);
+            }
+
+            // 构建完整权限对象
+            const newPerms = {
+                dbRead: currentPerms.dbRead !== false,
+                dbWrite: currentPerms.dbWrite !== false,
+                cacheRead: currentPerms.cacheRead !== false,
+                cacheWrite: currentPerms.cacheWrite !== false,
+                ipcServices: newServices
+            };
+
+            loading.permissions = true;
+            try {
+                await api.post(`/governance/${activeId.value}/permissions`, newPerms);
+
+                // 更新本地状态
+                const idx = plugins.value.findIndex(p => p.pluginId === activeId.value);
+                if (idx !== -1) {
+                    plugins.value[idx].permissions = newPerms;
+                }
+                ipcEnabled.value = newValue; // 更新开关视觉
+
+                showToast(`IPC 授权 ${newValue ? '已开启' : '已关闭'}`, 'success');
+            } catch (e) {
+                showToast('IPC 授权更新失败: ' + e.message, 'error');
             } finally {
                 loading.permissions = false;
             }
@@ -555,7 +625,7 @@ createApp({
 
             // 方法
             refreshPlugins, selectPlugin, updateStatus, requestUnload,
-            confirmModalAction, updateCanaryConfig, togglePerm,
+            confirmModalAction, updateCanaryConfig, togglePerm, toggleIpc,
             simulate, simulateIPC, toggleAuto, resetStats, clearLogs,
             handleLogScroll, scrollToTop,
             formatDrift, formatTime,
