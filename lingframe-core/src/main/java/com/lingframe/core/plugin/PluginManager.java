@@ -263,7 +263,11 @@ public class PluginManager {
                 ? defaultInstance.getContainer().getClassLoader()
                 : null;
 
-        runtime.shutdown();
+        try {
+            runtime.shutdown();
+        } catch (Exception e) {
+            log.warn("Error shutting down runtime for plugin: {}", pluginId, e);
+        }
         unregisterProtocolServices(pluginId);
         eventBus.unsubscribeAll(pluginId);
         permissionService.removePlugin(pluginId);

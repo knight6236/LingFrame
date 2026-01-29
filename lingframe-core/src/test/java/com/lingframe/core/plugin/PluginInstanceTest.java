@@ -1,6 +1,7 @@
 package com.lingframe.core.plugin;
 
 import com.lingframe.api.config.PluginDefinition;
+import com.lingframe.api.exception.InvalidArgumentException;
 import com.lingframe.core.spi.PluginContainer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -72,7 +73,7 @@ public class PluginInstanceTest {
         @DisplayName("version 为 null 应抛出异常")
         void shouldThrowWhenVersionIsNull() {
             definition.setVersion(null);
-            assertThrows(IllegalArgumentException.class, () ->
+            assertThrows(InvalidArgumentException.class, () ->
                     new PluginInstance(container, definition));
         }
 
@@ -80,7 +81,7 @@ public class PluginInstanceTest {
         @DisplayName("version 为空白应抛出异常")
         void shouldThrowWhenVersionIsBlank() {
             definition.setVersion(" ");
-            assertThrows(IllegalArgumentException.class, () ->
+            assertThrows(InvalidArgumentException.class, () ->
                     new PluginInstance(container, definition));
         }
 

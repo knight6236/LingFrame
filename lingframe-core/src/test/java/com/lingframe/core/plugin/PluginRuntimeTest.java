@@ -3,6 +3,7 @@ package com.lingframe.core.plugin;
 import com.lingframe.api.config.PluginDefinition;
 import com.lingframe.api.context.PluginContext;
 import com.lingframe.core.event.EventBus;
+import com.lingframe.core.exception.ServiceUnavailableException;
 import com.lingframe.core.kernel.GovernanceKernel;
 import com.lingframe.core.spi.PluginContainer;
 import com.lingframe.core.spi.PluginServiceInvoker;
@@ -65,7 +66,8 @@ public class PluginRuntimeTest {
                 return method.invoke(bean, args);
             } catch (InvocationTargetException e) {
                 Throwable cause = e.getCause();
-                if (cause instanceof Exception) throw (Exception) cause;
+                if (cause instanceof Exception)
+                    throw (Exception) cause;
                 throw new RuntimeException(cause);
             }
         };
@@ -80,8 +82,7 @@ public class PluginRuntimeTest {
                 trafficRouter,
                 invoker,
                 transactionVerifier,
-                Collections.emptyList()
-        );
+                Collections.emptyList());
     }
 
     @AfterEach
@@ -177,6 +178,7 @@ public class PluginRuntimeTest {
             PluginInstance instance = createMockInstance("1.0.0");
 
             runtime.addInstance(instance, pluginContext, true);
+            runtime.activate();
 
             assertTrue(runtime.isAvailable());
             assertEquals("1.0.0", runtime.getVersion());
@@ -187,6 +189,7 @@ public class PluginRuntimeTest {
         void shouldNotBeAvailableAfterShutdown() {
             PluginInstance instance = createMockInstance("1.0.0");
             runtime.addInstance(instance, pluginContext, true);
+            runtime.activate();
 
             runtime.shutdown();
 
@@ -241,8 +244,7 @@ public class PluginRuntimeTest {
         void routeShouldThrowWhenNoInstance() {
             when(trafficRouter.route(anyList(), any())).thenReturn(null);
 
-            assertThrows(IllegalStateException.class, () ->
-                    runtime.routeToAvailableInstance("test:service"));
+            assertThrows(ServiceUnavailableException.class, () -> runtime.routeToAvailableInstance("test:service"));
         }
     }
 
@@ -257,6 +259,7 @@ public class PluginRuntimeTest {
         void invokeShouldSucceed() throws Exception {
             PluginInstance instance = createMockInstance("1.0.0");
             runtime.addInstance(instance, pluginContext, true);
+            runtime.activate();
 
             when(trafficRouter.route(anyList(), any())).thenReturn(instance);
 
@@ -265,7 +268,7 @@ public class PluginRuntimeTest {
             Method method = TestService.class.getMethod("hello", String.class);
             runtime.getServiceRegistry().registerService("test:hello", bean, method);
 
-            Object result = runtime.invoke("caller", "test:hello", new Object[]{"World"});
+            Object result = runtime.invoke("caller", "test:hello", new Object[] { "World" });
 
             assertEquals("Hello, World", result);
         }
@@ -275,6 +278,7 @@ public class PluginRuntimeTest {
         void invokeShouldThrowWhenServiceNotFound() {
             PluginInstance instance = createMockInstance("1.0.0");
             runtime.addInstance(instance, pluginContext, true);
+            runtime.activate();
 
             when(trafficRouter.route(anyList(), any())).thenReturn(instance);
 
@@ -285,8 +289,8 @@ public class PluginRuntimeTest {
         @Test
         @DisplayName("无实例时调用应抛出异常")
         void invokeShouldThrowWhenNoInstance() {
-            assertThrows(IllegalStateException.class, () ->
-                    runtime.invoke("caller", "test:service", new Object[]{}));
+            assertThrows(ServiceUnavailableException.class,
+                    () -> runtime.invoke("caller", "test:service", new Object[] {}));
         }
     }
 
@@ -334,6 +338,7 @@ public class PluginRuntimeTest {
         void getStatsShouldReturnCompleteStats() {
             PluginInstance instance = createMockInstance("1.0.0");
             runtime.addInstance(instance, pluginContext, true);
+            runtime.activate();
 
             PluginRuntime.RuntimeStats stats = runtime.getStats();
 
@@ -351,6 +356,7 @@ public class PluginRuntimeTest {
         void statsToStringShouldWork() {
             PluginInstance instance = createMockInstance("1.0.0");
             runtime.addInstance(instance, pluginContext, true);
+            runtime.activate();
 
             String str = runtime.getStats().toString();
 
@@ -434,8 +440,7 @@ public class PluginRuntimeTest {
                     trafficRouter,
                     invoker,
                     transactionVerifier,
-                    Collections.emptyList()
-            );
+                    Collections.emptyList());
 
             try {
                 assertEquals(5000, customRuntime.getConfig().getDefaultTimeoutMs());
@@ -458,8 +463,7 @@ public class PluginRuntimeTest {
                     trafficRouter,
                     invoker,
                     transactionVerifier,
-                    Collections.emptyList()
-            );
+                    Collections.emptyList());
 
             try {
                 assertNotNull(nullConfigRuntime.getConfig());

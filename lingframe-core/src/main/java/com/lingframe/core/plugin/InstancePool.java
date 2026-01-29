@@ -78,8 +78,7 @@ public class InstancePool {
      * 检查是否有可用实例
      */
     public boolean hasAvailableInstance() {
-        PluginInstance instance = defaultInstance.get();
-        return instance != null && instance.isReady() && !instance.isDying();
+        return activePool.stream().anyMatch(instance -> instance.isReady() && !instance.isDying());
     }
 
     /**

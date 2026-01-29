@@ -1,5 +1,7 @@
 package com.lingframe.core.plugin;
 
+import com.lingframe.api.exception.InvalidArgumentException;
+import com.lingframe.core.exception.ServiceNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -150,7 +152,7 @@ public class ServiceRegistryTest {
             TestService bean = new TestService();
             Method method = TestService.class.getMethod("hello", String.class);
 
-            assertThrows(IllegalArgumentException.class, () ->
+            assertThrows(InvalidArgumentException.class, () ->
                     registry.registerService(null, bean, method));
         }
 
@@ -160,7 +162,7 @@ public class ServiceRegistryTest {
             TestService bean = new TestService();
             Method method = TestService.class.getMethod("hello", String.class);
 
-            assertThrows(IllegalArgumentException.class, () ->
+            assertThrows(InvalidArgumentException.class, () ->
                     registry.registerService("  ", bean, method));
         }
 
@@ -169,7 +171,7 @@ public class ServiceRegistryTest {
         void registerNullBeanShouldThrow() throws Exception {
             Method method = TestService.class.getMethod("hello", String.class);
 
-            assertThrows(IllegalArgumentException.class, () ->
+            assertThrows(InvalidArgumentException.class, () ->
                     registry.registerService("test:hello", null, method));
         }
 
@@ -178,7 +180,7 @@ public class ServiceRegistryTest {
         void registerNullMethodShouldThrow() {
             TestService bean = new TestService();
 
-            assertThrows(IllegalArgumentException.class, () ->
+            assertThrows(InvalidArgumentException.class, () ->
                     registry.registerService("test:hello", bean, null));
         }
     }
@@ -225,7 +227,7 @@ public class ServiceRegistryTest {
         @Test
         @DisplayName("getServiceRequired 对不存在的服务应抛出异常")
         void getServiceRequiredShouldThrowForNonExistent() {
-            assertThrows(IllegalStateException.class, () ->
+            assertThrows(ServiceNotFoundException.class, () ->
                     registry.getServiceRequired("non:existent"));
         }
 

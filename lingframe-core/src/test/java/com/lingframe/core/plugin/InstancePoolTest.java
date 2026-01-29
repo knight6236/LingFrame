@@ -1,6 +1,7 @@
 package com.lingframe.core.plugin;
 
 import com.lingframe.api.config.PluginDefinition;
+import com.lingframe.api.exception.InvalidArgumentException;
 import com.lingframe.core.spi.PluginContainer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -150,7 +151,7 @@ public class InstancePoolTest {
         @Test
         @DisplayName("添加 null 实例应抛出异常")
         void addNullShouldThrow() {
-            assertThrows(IllegalArgumentException.class, () ->
+            assertThrows(InvalidArgumentException.class, () ->
                     pool.addInstance(null, true));
         }
     }

@@ -22,11 +22,16 @@ import java.util.concurrent.ConcurrentHashMap;
 @Slf4j
 public class LocalGovernanceRegistry {
     private final Map<String, GovernancePolicy> patchMap = new ConcurrentHashMap<>();
-    private final String storePath = "./config/ling-governance-patch.yml";
+    private final String storePath;
     private final EventBus eventBus;
 
     public LocalGovernanceRegistry(EventBus eventBus) {
+        this(eventBus, "./config/ling-governance-patch.yml");
+    }
+
+    public LocalGovernanceRegistry(EventBus eventBus, String storePath) {
         this.eventBus = eventBus;
+        this.storePath = storePath;
         load();
     }
 

@@ -3,6 +3,7 @@ package com.lingframe.core.plugin;
 import com.lingframe.api.config.PluginDefinition;
 import com.lingframe.api.context.PluginContext;
 import com.lingframe.core.event.EventBus;
+import com.lingframe.core.exception.ServiceUnavailableException;
 import com.lingframe.core.plugin.event.RuntimeEventBus;
 import com.lingframe.core.spi.PluginContainer;
 import org.junit.jupiter.api.*;
@@ -176,7 +177,7 @@ public class PluginLifecycleManagerTest {
 
             PluginInstance instance = createMockInstance("1.0.0");
 
-            assertThrows(IllegalStateException.class, () ->
+            assertThrows(ServiceUnavailableException.class, () ->
                     lifecycleManager.addInstance(instance, pluginContext, true));
         }
 
@@ -193,7 +194,7 @@ public class PluginLifecycleManagerTest {
 
             PluginInstance newInstance = createMockInstance("new");
 
-            assertThrows(IllegalStateException.class, () ->
+            assertThrows(ServiceUnavailableException.class, () ->
                     lifecycleManager.addInstance(newInstance, pluginContext, true));
         }
     }

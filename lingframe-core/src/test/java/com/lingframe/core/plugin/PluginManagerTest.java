@@ -1,6 +1,7 @@
 package com.lingframe.core.plugin;
 
 import com.lingframe.api.config.PluginDefinition;
+import com.lingframe.api.exception.InvalidArgumentException;
 import com.lingframe.api.security.PermissionService;
 import com.lingframe.core.config.LingFrameConfig;
 import com.lingframe.core.event.EventBus;
@@ -238,7 +239,7 @@ public class PluginManagerTest {
             File invalidDir = new File("/non/existent/path");
             PluginDefinition definition = createDefinition("plugin-a", "1.0.0");
 
-            assertThrows(IllegalArgumentException.class, () -> pluginManager.installDev(definition, invalidDir));
+            assertThrows(InvalidArgumentException.class, () -> pluginManager.installDev(definition, invalidDir));
         }
 
         @Test
@@ -247,7 +248,7 @@ public class PluginManagerTest {
             File pluginDir = createPluginDir("plugin-a");
             PluginDefinition definition = new PluginDefinition(); // 缺少 id 和 version
 
-            assertThrows(IllegalArgumentException.class, () -> pluginManager.installDev(definition, pluginDir));
+            assertThrows(InvalidArgumentException.class, () -> pluginManager.installDev(definition, pluginDir));
         }
     }
 
@@ -782,6 +783,7 @@ public class PluginManagerTest {
 
             // 验证插件 A 不受影响
             PluginRuntime runtimeA = pluginManager.getRuntime("plugin-a");
+            runtimeA.activate();
             assertNotNull(runtimeA);
             assertTrue(runtimeA.isAvailable());
             assertEquals("1.0.0", runtimeA.getVersion());
@@ -820,6 +822,7 @@ public class PluginManagerTest {
 
             // 验证 B 不受影响
             PluginRuntime runtimeB = pluginManager.getRuntime("plugin-b");
+            runtimeB.activate();
             assertNotNull(runtimeB);
             assertTrue(runtimeB.isAvailable());
         }
@@ -845,6 +848,7 @@ public class PluginManagerTest {
 
             // 验证插件 A 不受影响
             PluginRuntime runtimeA = pluginManager.getRuntime("plugin-a");
+            runtimeA.activate();
             assertNotNull(runtimeA);
             assertTrue(runtimeA.isAvailable());
         }
@@ -973,6 +977,7 @@ public class PluginManagerTest {
 
             // 正常插件仍然可用
             PluginRuntime goodRuntime = pluginManager.getRuntime("good-plugin");
+            goodRuntime.activate();
             assertNotNull(goodRuntime);
             assertTrue(goodRuntime.isAvailable());
         }
@@ -1160,10 +1165,12 @@ public class PluginManagerTest {
                 PluginDefinition evilDef = createDefinition("evil-plugin", "1.0.0");
 
                 assertThrows(RuntimeException.class, () -> secureManager.installDev(evilDef, evilDir));
+                PluginRuntime goodRuntime = secureManager.getRuntime("good-plugin");
+                goodRuntime.activate();
 
                 // 正常插件不受影响
-                assertNotNull(secureManager.getRuntime("good-plugin"));
-                assertTrue(secureManager.getRuntime("good-plugin").isAvailable());
+                assertNotNull(goodRuntime);
+                assertTrue(goodRuntime.isAvailable());
 
             } finally {
                 secureManager.shutdown();
