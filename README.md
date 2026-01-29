@@ -1,4 +1,4 @@
-# LingFrame · 灵珑
+# LingFrame · LingFrame
 
 ![Status](https://img.shields.io/badge/Status-Core_Implemented-green)
 ![License](https://img.shields.io/badge/License-Apache_2.0-blue)
@@ -7,116 +7,117 @@
 [![Help Wanted](https://img.shields.io/badge/PRs-welcome-brightgreen)](../../pulls)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/LingFrame/LingFrame)
 
-## 你可以从这里开始
+[中文版 / Chinese](./README.zh-CN.md)
 
-- **技术入口**：深入治理细节与架构 👉 [technical-entry.md](docs/technical-entry.md)
-- **实用入口**：快速上手与灰度发布 👉 [practical-entry.md](docs/practical-entry.md)
-- **快速试用**：👉 [getting-started.md](docs/getting-started.md)
-- **核心立场**：👉 [MANIFESTO.md](MANIFESTO.md)
-- **设计原则与边界选择**：👉 [WHY.md](WHY.md)
+## Start From Here
 
-你不需要一次性读完所有内容。  
-灵珑允许你在任何阶段停下。
+- **Technical Entry**: Dive into governance details and architecture 👉 [technical-entry.md](docs/technical-entry.md)
+- **Practical Entry**: Quick start and canary deployment 👉 [practical-entry.md](docs/practical-entry.md)
+- **Quick Trial**: 👉 [getting-started.md](docs/getting-started.md)
+- **Core Stance**: 👉 [MANIFESTO.md](MANIFESTO.md)
+- **Design Principles and Boundaries**: 👉 [WHY.md](WHY.md)
 
----
-
-![LingFrame Dashboard 示例](./docs/images/dashboard.png)
+You don't need to read everything at once.  
+LingFrame allows you to pause at any stage.
 
 ---
 
-LingFrame（灵珑）是一个**面向长期运行系统的 JVM 运行时治理框架**。  
-它尝试在**不重写系统、不强行拆分微服务**的前提下，让已经服役多年的单体应用，继续稳定、可控、可演进地运行下去。
+![LingFrame Dashboard Example](./docs/images/dashboard.en.png)
 
-很多系统并不是设计得不好，  
-只是活得太久，改得太急。
+*Real-time plugin governance dashboard: monitor status, canary traffic, and audit logs.*
 
 ---
 
-## 序章
+LingFrame (LingFrame) is a **JVM runtime governance framework for long-running systems**.  
+It aims to keep legacy monolithic applications stable, controllable, and evolvable **without rewriting the system or forcing microservices splits**.
 
-它最初并不是为了优雅而诞生的。
-
-只是某一天，人们发现系统已经大到无法理解，却又不能停下。  
-每一次改动都像在黑夜中摸索，  
-每一次上线都伴随着祈祷。
-
-于是，有人开始问一个看似保守的问题：
-
-> 如果系统暂时无法被重写，  
-> 那它是否还能被**治理**？
-
-不是通过更多规则，  
-而是通过**更清晰的边界**。  
-不是替系统做决定，  
-而是让系统在还能被理解的时候，  
-把事情放回该在的位置上。
-
-灵珑由此诞生。
+Many systems aren't poorly designed—  
+they've just lived too long and changed too hastily.
 
 ---
 
-## 灵珑关心的，并不是“加功能”
+## Prologue
 
-在大量真实系统中，问题往往不是功能不足，而是：
+It wasn't born for elegance initially.
 
-- 系统仍在运行，但已经没人敢改  
-- 模块边界逐渐失效，耦合无法追溯  
-- 插件化引入后，隔离却只停留在结构层  
-- 重启不是不能接受，而是**无法预期**
+One day, people realized the system had grown too vast to comprehend, yet it couldn't stop.  
+Every change felt like groping in the dark,  
+every deployment came with a prayer.
 
-灵珑关注的核心问题只有一个：
+So, someone asked a seemingly conservative question:
 
-> **系统在长期运行中，如何不失控。**
+> If the system can't be rewritten for now,  
+> can it still be **governed**?
 
----
+Not through more rules,  
+but through **clearer boundaries**.  
+Not making decisions for the system,  
+but putting things back in their rightful place while it's still understandable.
 
-## 当前阶段
-
-**v0.1.x · 少女期（预览版）**
-
-这是一个方向已经冻结、边界正在成型的阶段：
-
-- 不追求功能完整
-- 不承诺向后兼容
-- 只验证一件事：  
-  **运行时治理在单进程内是否成立**
-
-这是一个拒绝讨好、开始选择的阶段。
+Thus, LingFrame was born.
 
 ---
 
-## 灵珑是什么
+## What LingFrame Focuses On Isn't "Adding Features"
 
-- 一个 **JVM 运行时治理框架**
-- 一个 **面向老系统的结构性工具**
-- 一个 **允许插件存在，但不纵容插件失控的体系**
+In many real-world systems, the issue isn't a lack of features, but:
 
-它不是微服务替代品，  
-也不是模块化银弹。
+- The system is still running, but no one dares to change it
+- Module boundaries fade, couplings become untraceable
+- After introducing plugins, isolation stays structural only
+- Restarts aren't unacceptable, but **unpredictable**
 
-灵珑存在的意义，是在系统复杂到某个阶段时，  
-**为“回缩”与“重组”提供可能性**。
+LingFrame addresses one core problem:
 
----
-
-## 技术边界（简述）
-
-- JVM：JDK 21 / JDK 8（后续兼容支持）
-- Spring Boot：3.x / 2.x（后续兼容支持）
-- 单进程内插件隔离与治理
-- 明确区分：**接口稳定性 ≠ 实现稳定性**
-
-灵珑不隐藏复杂性，  
-只是拒绝把复杂性一次性压给使用者。
+> **How to prevent systems from losing control in long-term operation.**
 
 ---
 
-## 最后
+## Current Stage
 
-灵珑不会替系统做决定。
+**v0.1.x · Maiden Phase (Preview)**
 
-她只是在系统还愿意被理解的时候，  
-帮你把事情放回该在的位置上。
+This is a stage where the direction is frozen and boundaries are forming:
 
-如果你只是走到这里停下，  
-那也完全没有关系。
+- Not pursuing full features
+- No backward compatibility promises
+- Verifying one thing:  
+  **Does runtime governance hold in a single process?**
+
+This is a phase that rejects pandering and begins choices.
+
+---
+
+## What Is LingFrame
+
+- A **JVM runtime governance framework**
+- A **structural tool for legacy systems**
+- A **system that allows plugins but doesn't tolerate their chaos**
+
+It's not a microservices replacement,  
+nor a modularization silver bullet.
+
+LingFrame's purpose is to provide possibilities for **"retraction" and "reorganization"** when the system reaches a certain complexity.
+
+---
+
+## Technical Boundaries (Overview)
+
+- JVM: JDK 21 / JDK 8 (future compatibility support)
+- Spring Boot: 3.x / 2.x (future compatibility support)
+- Single-process plugin isolation and governance
+- Clear distinction: **Interface stability ≠ Implementation stability**
+
+LingFrame doesn't hide complexity—  
+it just refuses to dump it all on the user at once.
+
+---
+
+## Finally
+
+LingFrame won't make decisions for the system.
+
+She just helps put things back in place while the system is still willing to be understood.
+
+If you just stop here,  
+that's perfectly fine.
