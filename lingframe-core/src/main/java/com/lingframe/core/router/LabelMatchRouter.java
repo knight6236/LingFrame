@@ -15,13 +15,18 @@ public class LabelMatchRouter implements TrafficRouter {
 
     @Override
     public PluginInstance route(List<PluginInstance> candidates, InvocationContext context) {
-        if (candidates == null || candidates.isEmpty()) return null;
+        if (candidates == null || candidates.isEmpty())
+            return null;
 
         Map<String, String> requestLabels = (context != null) ? context.getLabels() : null;
 
-        // 如果没有请求标签，或者候选只有一个，直接返回第一个（通常是 Active）
+        // 如果没有请求标签
         if (requestLabels == null || requestLabels.isEmpty()) {
-            return candidates.getFirst();
+            if (candidates.size() == 1) {
+                return candidates.getFirst();
+            }
+            // 尝试权重路由
+            return doWeightedRoute(candidates);
         }
 
         // 标签打分逻辑
@@ -31,6 +36,50 @@ public class LabelMatchRouter implements TrafficRouter {
                 .max(Comparator.comparingInt(si -> si.score))
                 .map(si -> si.instance)
                 .orElse(candidates.getFirst());
+    }
+
+    private PluginInstance doWeightedRoute(List<PluginInstance> candidates) {
+        int totalWeight = 0;
+        int[] weights = new int[candidates.size()];
+
+        for (int i = 0; i < candidates.size(); i++) {
+            PluginInstance inst = candidates.get(i);
+            int weight = getWeight(inst);
+            weights[i] = weight;
+            totalWeight += weight;
+        }
+
+        if (totalWeight <= 0) {
+            return candidates.getFirst();
+        }
+
+        int random = java.util.concurrent.ThreadLocalRandom.current().nextInt(totalWeight);
+        int current = 0;
+        for (int i = 0; i < candidates.size(); i++) {
+            current += weights[i];
+            if (random < current) {
+                return candidates.get(i);
+            }
+        }
+        return candidates.getFirst();
+    }
+
+    private int getWeight(PluginInstance instance) {
+        // 默认权重 100
+        int defaultWeight = 100;
+
+        // 尝试从 properties 获取
+        if (instance.getDefinition().getProperties() != null) {
+            Object val = instance.getDefinition().getProperties().get("trafficWeight");
+            if (val != null) {
+                try {
+                    return Integer.parseInt(val.toString());
+                } catch (NumberFormatException e) {
+                    log.warn("Invalid trafficWeight for plugin {}: {}", instance.getVersion(), val);
+                }
+            }
+        }
+        return defaultWeight;
     }
 
     private int calculateScore(Map<String, String> instLabels, Map<String, String> reqLabels) {

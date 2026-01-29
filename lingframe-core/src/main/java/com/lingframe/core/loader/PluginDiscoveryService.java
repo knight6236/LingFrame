@@ -89,14 +89,22 @@ public class PluginDiscoveryService {
             String version = def.getVersion();
 
             // 检查冲突与优先级
-            if (loadedPluginIds.contains(pluginId)) {
-                log.info("Plugin [{}] already loaded from a higher priority root. Skipping duplicate in: {}",
-                        pluginId, file.getAbsolutePath());
-                return;
-            }
+            // if (loadedPluginIds.contains(pluginId)) {
+            // log.info("Plugin [{}] already loaded from a higher priority root. Skipping
+            // duplicate in: {}",
+            // pluginId, file.getAbsolutePath());
+            // return;
+            // }
 
             // 执行安装
             log.info("Discovered plugin: {} v{} at {}", pluginId, version, file.getName());
+
+            // 检查是否为金丝雀版本
+            if (def.getProperties() != null && Boolean.TRUE.equals(def.getProperties().get("canary"))) {
+                pluginManager.deployCanary(def, file, java.util.Collections.emptyMap());
+                loadedPluginIds.add(pluginId);
+                return;
+            }
 
             if (LingFrameConfig.current().isDevMode()) {
                 // 开发模式：目录安装
