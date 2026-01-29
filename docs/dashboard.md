@@ -34,6 +34,9 @@ lingframe:
     enabled: true
 ```
 
+![LingFrame Dashboard 示例](./images/dashboard.png)
+*图示：插件管理面板，展示实时状态、灰度流量和审计日志。*
+
 ## API 端点
 
 Dashboard 启用后，以下 REST API 可用：

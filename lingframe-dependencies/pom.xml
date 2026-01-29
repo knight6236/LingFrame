@@ -13,7 +13,7 @@
     <properties>
         <!-- LingFrame 版本 -->
         <!-- 使用 Maven CI Friendly 变量 -->
-        <revision>0.0.1</revision>
+        <revision>0.1.0-Preview</revision>
 
         <!-- Java -->
         <java.version>21</java.version>
