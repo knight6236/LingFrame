@@ -6,6 +6,17 @@ spring:
     console:
       enabled: true
       path: /h2-console
+  jpa:
+    open-in-view: false
+  datasource:
+    driver-class-name: org.h2.Driver
+    url: jdbc:h2:mem:lingframe;DB_CLOSE_DELAY=-1;MODE=MySQL
+    username: sa
+    password:
+
+  # 演示用：使用简单的 ConcurrentMapCacheManager
+  cache:
+    type: simple
 
 lingframe:
   enabled: true
@@ -16,10 +27,30 @@ lingframe:
   plugin-roots:
     - lingframe-examples/lingframe-example-plugin-order
     - lingframe-examples/lingframe-example-plugin-user
+    - lingframe-examples/lingframe-example-plugin-user-canary
   host-governance:
     enabled: false
     govern-internal-calls: true
     check-permissions: true
+  # 开启 Dashboard 功能
   dashboard:
     enabled: true
 
+# SpringDoc OpenAPI 配置
+springdoc:
+  # 禁用 SpringDoc 缓存以支持插件动态加载
+  cache:
+    disabled: true
+  packages-to-scan: com.lingframe
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha
+# knife4j的增强配置，不需要增强可以不配
+knife4j:
+  enable: true
+  setting:
+    # Knife4j默认显示中文(zh-CN),如果开发者想直接显示英文(en-US)，在通过该配置进行设置即可
+    language: zh_cn

@@ -13,9 +13,9 @@ governance:
   # 插件能力申请 (PluginManager 使用)
   capabilities:
     - capability: "storage:sql"
-      accessType: "READ"
-    - capability: "cache:redis"
-      accessType: "WRITE"
+      accessType: "WRITE"      # 需要读写权限
+    - capability: "cache:local"
+      accessType: "WRITE"      # 使用本地缓存，与 Dashboard 对齐
 
 # --- 自定义扩展/依赖 (对应 Map<String, Object> properties) ---
 properties:

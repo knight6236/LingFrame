@@ -7,11 +7,11 @@
         <version>${revision}</version>
     </parent>
 
-    <artifactId>lingframe-example-plugin-user</artifactId>
+    <artifactId>lingframe-example-plugin-user-canary</artifactId>
     <packaging>jar</packaging>
 
-    <name>LingFrame :: Example :: User Plugin</name>
-    <description>示例业务插件（用户管理）</description>
+    <name>LingFrame :: Example :: User Plugin (Canary)</name>
+    <description>用户插件金丝雀版本 - 用于灰度发布测试</description>
 
     <dependencies>
         <!-- 仅依赖 API -->
@@ -66,7 +66,7 @@
                 <configuration>
                     <archive>
                         <manifestEntries>
-                            <Plugin-Id>user-plugin</Plugin-Id>
+                            <Plugin-Id>user-plugin-canary</Plugin-Id>
                             <Plugin-Version>${project.version}</Plugin-Version>
                         </manifestEntries>
                     </archive>

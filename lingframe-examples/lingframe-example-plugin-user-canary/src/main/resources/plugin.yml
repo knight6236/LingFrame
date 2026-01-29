@@ -1,9 +1,9 @@
 # --- 基础元数据 (直接在根节点) ---
 id: user-plugin
-version: 1.0.0
+version: 1.1.0-canary
 provider: "LingFrame"
-description: "用户插件"
-mainClass: "com.lingframe.example.user.UserApplication"
+description: "用户插件 (金丝雀版本) - 用于灰度发布测试"
+mainClass: "com.lingframe.example.user.canary.UserCanaryApplication"
 
 # --- 治理配置 ---
 governance:
@@ -13,12 +13,12 @@ governance:
     # 插件能力申请 (PluginManager 使用)
     capabilities:
       - capability: "storage:sql"
-        accessType: "WRITE"          # 需要读写权限
+        accessType: "WRITE"
       - capability: "cache:local"
-        accessType: "WRITE"          # 需要缓存读写
+        accessType: "WRITE"
       - capability: "ipc:order-plugin"
-        accessType: "EXECUTE"        # 允许调用订单插件服务
+        accessType: "EXECUTE"
 
-# --- 自定义扩展/依赖 (对应 Map<String, Object> properties) ---
+# --- 金丝雀配置 ---
 properties:
-  mark: "test"
+  canary: true

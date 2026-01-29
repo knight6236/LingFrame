@@ -16,6 +16,7 @@
     <modules>
         <module>lingframe-example-host-app</module>
         <module>lingframe-example-plugin-user</module>
+        <module>lingframe-example-plugin-user-canary</module>
         <module>lingframe-example-plugin-order</module>
         <module>lingframe-example-order-api</module>
         <module>lingframe-example-plugin-native</module>

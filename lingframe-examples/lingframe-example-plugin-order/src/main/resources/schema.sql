@@ -1,11 +1,11 @@
+-- 订单表
 CREATE TABLE IF NOT EXISTS t_order
 (
-    id         BIGINT AUTO_INCREMENT PRIMARY KEY,
-    user_id    BIGINT NOT NULL,
+    order_id   BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_name  VARCHAR(255),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-INSERT INTO t_order (user_id)
-VALUES (1);
-INSERT INTO t_order (user_id)
-VALUES (2);
+-- 示例数据
+INSERT INTO t_order (user_name) VALUES ('Alice');
+INSERT INTO t_order (user_name) VALUES ('Bob');

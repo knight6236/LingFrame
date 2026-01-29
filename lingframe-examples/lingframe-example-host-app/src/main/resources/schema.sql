@@ -1,9 +1,11 @@
-CREATE TABLE IF NOT EXISTS t_user (
+-- 宿主业务表：配置管理
+CREATE TABLE IF NOT EXISTS t_config (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    email VARCHAR(255) NOT NULL,
+    config_key VARCHAR(255) NOT NULL UNIQUE,
+    config_value VARCHAR(1024),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-INSERT INTO t_user (name, email) VALUES ('Alice', 'alice@example.com');
-INSERT INTO t_user (name, email) VALUES ('Bob', 'bob@example.com');
+-- 示例数据
+INSERT INTO t_config (config_key, config_value) VALUES ('app.name', 'LingFrame Demo');
+INSERT INTO t_config (config_key, config_value) VALUES ('app.version', '1.0.0');

@@ -39,6 +39,9 @@
         <caffeine.version>3.2.1</caffeine.version>
         <asm.version>9.6</asm.version>
 
+        <springdoc.version>2.8.9</springdoc.version>
+        <knife4j.version>4.4.0</knife4j.version>
+
         <!-- 测试 -->
         <junit-jupiter.version>5.10.1</junit-jupiter.version>
         <mockito.version>5.8.0</mockito.version>
@@ -147,6 +150,25 @@
                 <groupId>org.ow2.asm</groupId>
                 <artifactId>asm</artifactId>
                 <version>${asm.version}</version>
+            </dependency>
+
+            <!-- SpringDoc for API Documentation -->
+            <dependency>
+                <groupId>org.springdoc</groupId>
+                <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+                <version>${springdoc.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.github.xiaoymin</groupId>
+                <artifactId>knife4j-openapi3-jakarta-spring-boot-starter</artifactId>
+                <version>${knife4j.version}</version>
+                <exclusions>
+                    <exclusion>
+                        <groupId>org.springdoc</groupId>
+                        <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+                    </exclusion>
+                </exclusions>
             </dependency>
 
             <!-- Lombok -->
