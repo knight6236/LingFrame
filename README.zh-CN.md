@@ -22,7 +22,7 @@
 
 ---
 
-![LingFrame Dashboard 示例](./docs/images/dashboard.png)
+![LingFrame Dashboard 示例](./docs/images/dashboard.zh-CN.png)
 
 ---
 
