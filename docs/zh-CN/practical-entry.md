@@ -3,12 +3,6 @@
 **为 Spring Boot 提供插件化架构与不停机灰度发布的 JVM 运行时框架**
 *在此之上，内建完整的权限控制与安全审计能力*
 
-![Status](https://img.shields.io/badge/Status-Core_Implemented-green)
-![License](https://img.shields.io/badge/License-Apache_2.0-blue)
-![Java](https://img.shields.io/badge/Java-17-orange)
-![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.5.6-brightgreen)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](../../pulls)
-
 ---
 
 ## 🚑 LingFrame 能立刻帮你解决什么？
@@ -130,8 +124,17 @@ LingFrame 会记录：
 ### 启动宿主应用
 
 ```bash
-git clone https://github.com/lingframe/lingframe.git
-cd lingframe
+# 克隆仓库（选择任意仓库）
+# AtomGit（推荐）
+git clone https://atomgit.com/lingframe/LingFrame.git
+
+# Gitee（国内镜像）
+git clone https://gitee.com/knight6236/lingframe.git
+
+# GitHub（国际）
+git clone https://github.com/LingFrame/LingFrame.git
+
+cd LingFrame
 mvn clean install -DskipTests
 
 cd lingframe-examples/lingframe-example-host-app
